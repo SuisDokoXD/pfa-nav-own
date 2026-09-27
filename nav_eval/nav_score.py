@@ -34,6 +34,15 @@ def _norm_frame(frame: str) -> str:
     return (frame or "").strip().lstrip("/")
 
 
+def _frame_without_namespace(frame: str, namespace: str) -> str:
+    """Normalize frame IDs emitted by bridges that prefix the ROS namespace."""
+    normalized = _norm_frame(frame)
+    prefix = _norm_frame(namespace)
+    if prefix and normalized.startswith(prefix + "/"):
+        return normalized[len(prefix) + 1 :]
+    return normalized
+
+
 def _yaw(q: Any) -> float:
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
@@ -55,6 +64,43 @@ def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 def _mean(values: list[float]) -> Optional[float]:
     return sum(values) / len(values) if values else None
+
+
+def _path_shape(points: list[tuple[float, float]], samples: int = 5) -> list[tuple[float, float]]:
+    """Resample a path relative to its first point for meaningful replan checks."""
+    if not points:
+        return []
+    if len(points) == 1:
+        return [(0.0, 0.0)] * samples
+    cumulative = [0.0]
+    for first, second in zip(points, points[1:]):
+        cumulative.append(cumulative[-1] + _dist(first, second))
+    total = cumulative[-1]
+    if total <= 1e-6:
+        return [(0.0, 0.0)] * samples
+    result = []
+    for index in range(samples):
+        target = total * index / (samples - 1)
+        segment = next((i for i in range(1, len(cumulative)) if cumulative[i] >= target), len(cumulative) - 1)
+        span = cumulative[segment] - cumulative[segment - 1]
+        ratio = 0.0 if span <= 1e-9 else (target - cumulative[segment - 1]) / span
+        x = points[segment - 1][0] + ratio * (points[segment][0] - points[segment - 1][0])
+        y = points[segment - 1][1] + ratio * (points[segment][1] - points[segment - 1][1])
+        result.append((x - points[0][0], y - points[0][1]))
+    return result
+
+
+def _path_changed_significantly(previous: list[tuple[float, float]], current: list[tuple[float, float]]) -> bool:
+    """Do not count routine controller path publications as replans."""
+    if not previous or not current:
+        return False
+    previous_shape = _path_shape(previous)
+    current_shape = _path_shape(current)
+    shape_error = _mean([_dist(a, b) for a, b in zip(previous_shape, current_shape)]) or 0.0
+    previous_length = sum(_dist(a, b) for a, b in zip(previous, previous[1:]))
+    current_length = sum(_dist(a, b) for a, b in zip(current, current[1:]))
+    length_error = abs(current_length - previous_length)
+    return shape_error > 0.35 or length_error > 0.75
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -89,6 +135,7 @@ class Evaluator:
     speed_errors: list[float] = field(default_factory=list)
     speeds: list[float] = field(default_factory=list)
     accelerations: list[float] = field(default_factory=list)
+    last_angular_speed: float = 0.0
     cmd_last: Optional[tuple[float, float, float, float]] = None
     plan: list[tuple[float, float]] = field(default_factory=list)
     local_plan: list[tuple[float, float]] = field(default_factory=list)
@@ -130,10 +177,12 @@ class Evaluator:
     scan_valid_ratios: list[float] = field(default_factory=list)
     scan_spike_rates: list[float] = field(default_factory=list)
     path_heading_variation: list[float] = field(default_factory=list)
+    namespace: str = ""
 
     def __post_init__(self) -> None:
         self.source_goal = self.goal
         self.source_goal_frame = _norm_frame(self.goal_frame or "") or None
+        self.namespace = _norm_frame(self.namespace)
 
     def _time(self, t: float) -> None:
         if self.first_t is None:
@@ -149,15 +198,16 @@ class Evaluator:
         self._time(t)
         self.samples += 1
         if frame:
-            self.pose_frame = _norm_frame(frame)
+            self.pose_frame = _frame_without_namespace(frame, self.namespace)
         pose = (x, y, yaw)
         if self.last_pose is not None:
             self.path_length += _dist((x, y), self.last_pose[:2])
         self.last_pose = pose
         speed = math.hypot(vx, vy)
         self.speeds.append(speed)
+        self.last_angular_speed = abs(wz)
         if self.gt_last_pose is not None:
-            if self.pose_frame and self.gt_frame and self.pose_frame != self.gt_frame:
+            if self.pose_frame and self.gt_frame and _frame_without_namespace(self.pose_frame, self.namespace) != _frame_without_namespace(self.gt_frame, self.namespace):
                 self.gt_frame_mismatch_count += 1
             else:
                 self.gt_position_errors.append(_dist((x, y), self.gt_last_pose[:2]))
@@ -167,7 +217,7 @@ class Evaluator:
         tracking_plan = self.local_plan if self.local_plan_frame in (None, self.pose_frame) else self.plan
         if tracking_plan:
             selected_frame = self.local_plan_frame if tracking_plan is self.local_plan else self.global_plan_frame
-            if self.pose_frame and selected_frame and self.pose_frame != selected_frame:
+            if self.pose_frame and selected_frame and _frame_without_namespace(self.pose_frame, self.namespace) != _frame_without_namespace(selected_frame, self.namespace):
                 self.frame_mismatch_count += 1
             else:
                 self.tracking_errors.append(min(_dist((x, y), p) for p in tracking_plan))
@@ -177,7 +227,7 @@ class Evaluator:
         self.gt_last_velocity = (vx, vy, wz)
         self.gt_last_t = t
         if frame:
-            self.gt_frame = _norm_frame(frame)
+            self.gt_frame = _frame_without_namespace(frame, self.namespace)
 
     def command(self, t: float, vx: float, vy: float, wz: float) -> None:
         self._time(t)
@@ -227,11 +277,11 @@ class Evaluator:
         new_plan = list(points)
         if new_plan:
             digest = self._digest(new_plan)
-            if self.plan and digest != self.last_plan_digest:
+            if self.plan and digest != self.last_plan_digest and _path_changed_significantly(self.plan, new_plan):
                 self.replans += 1
             self.plan = new_plan
             if frame:
-                self.global_plan_frame = _norm_frame(frame)
+                self.global_plan_frame = _frame_without_namespace(frame, self.namespace)
             self.last_plan_digest = digest
             self.plan_lengths.append(self._path_length(new_plan))
             if self.last_t is not None:
@@ -241,11 +291,11 @@ class Evaluator:
         new_plan = list(points)
         if new_plan:
             digest = self._digest(new_plan)
-            if self.local_plan and digest != self.last_local_plan_digest:
+            if self.local_plan and digest != self.last_local_plan_digest and _path_changed_significantly(self.local_plan, new_plan):
                 self.local_replans += 1
             self.local_plan = new_plan
             if frame:
-                self.local_plan_frame = _norm_frame(frame)
+                self.local_plan_frame = _frame_without_namespace(frame, self.namespace)
             self.last_local_plan_digest = digest
             self.local_plan_lengths.append(self._path_length(new_plan))
             headings = [math.atan2(b[1] - a[1], b[0] - a[0]) for a, b in zip(new_plan, new_plan[1:]) if _dist(a, b) > 1e-6]
@@ -275,7 +325,7 @@ class Evaluator:
         if valid:
             current = min(valid)
             self.min_range = current if self.min_range is None else min(self.min_range, current)
-        if self.scan_last_ranges is not None and (not self.speeds or self.speeds[-1] < 0.05):
+        if self.scan_last_ranges is not None and (not self.speeds or self.speeds[-1] < 0.05) and self.last_angular_speed < 0.08:
             changes = [abs(a - b) for a, b in zip(current_ranges, self.scan_last_ranges)
                        if math.isfinite(a) and math.isfinite(b) and a >= range_min and b >= range_min]
             if changes:
@@ -286,7 +336,11 @@ class Evaluator:
         start_t = self.run_start_t if self.run_start_t is not None else self.first_t
         duration = (self.last_t - start_t) if start_t is not None and self.last_t is not None else None
         final_error = None
-        goal_frame_mismatch = bool(self.goal_frame and self.pose_frame and self.goal_frame != self.pose_frame)
+        goal_frame_mismatch = bool(
+            self.goal_frame and self.pose_frame
+            and _frame_without_namespace(self.goal_frame, self.namespace)
+            != _frame_without_namespace(self.pose_frame, self.namespace)
+        )
         if self.goal and self.last_pose and not goal_frame_mismatch:
             final_error = _dist(self.goal, self.last_pose[:2])
             self.success = final_error <= self.goal_tolerance and (duration is None or duration <= self.timeout)
@@ -447,7 +501,7 @@ def score_bag(args: argparse.Namespace) -> dict[str, Any]:
         args.local_path_topic, args.scan_topic, args.action_status_topic,
     }
     msgs = {t: (get_message(types[t]) if t in types else None) for t in wanted}
-    ev = Evaluator(environment=args.environment,
+    ev = Evaluator(environment=args.environment, namespace=args.namespace or "",
                    goal=(args.goal_x, args.goal_y) if args.goal_x is not None and args.goal_y is not None else None,
                    goal_frame=args.goal_frame,
                    goal_tolerance=args.goal_tolerance, timeout=args.timeout, safety_distance=args.safety_distance)
@@ -503,7 +557,7 @@ def live_node(args: argparse.Namespace, ros_args: list[str]) -> None:
                     Parameter("use_sim_time", value=args.environment == "simulation")
                 ],
             )
-            self.ev = Evaluator(environment=args.environment,
+            self.ev = Evaluator(environment=args.environment, namespace=args.namespace or "",
                                 goal=(args.goal_x, args.goal_y) if args.goal_x is not None and args.goal_y is not None else None,
                                 goal_frame=args.goal_frame,
                                 goal_tolerance=args.goal_tolerance, timeout=args.timeout, safety_distance=args.safety_distance)
@@ -531,8 +585,20 @@ def live_node(args: argparse.Namespace, ros_args: list[str]) -> None:
         def ground_truth_odom_cb(self, m):
             p, tw = m.pose.pose, m.twist.twist
             self.ev.ground_truth_odom(self.now(), p.position.x, p.position.y, _yaw(p.orientation), tw.linear.x, tw.linear.y, tw.angular.z, m.header.frame_id)
-        def path_cb(self, m): self.ev.path(((p.pose.position.x, p.pose.position.y) for p in m.poses), m.header.frame_id)
-        def local_path_cb(self, m): self.ev.local_path(((p.pose.position.x, p.pose.position.y) for p in m.poses), m.header.frame_id)
+        def path_cb(self, m):
+            self.ev.path(((p.pose.position.x, p.pose.position.y) for p in m.poses), m.header.frame_id)
+        def local_path_cb(self, m):
+            points = [(p.pose.position.x, p.pose.position.y) for p in m.poses]
+            source_frame = _norm_frame(m.header.frame_id)
+            target_frame = self.ev.pose_frame
+            if points and source_frame and target_frame and source_frame != target_frame:
+                try:
+                    transform = self.tf_buffer.lookup_transform(target_frame, source_frame, Time())
+                    points = [_transform_xy(x, y, transform) for x, y in points]
+                    source_frame = target_frame
+                except TransformException:
+                    pass
+            self.ev.local_path(points, source_frame)
         def scan_cb(self, m): self.ev.scan(m.ranges, m.range_min, m.range_max)
         def cmd_cb(self, m): self.ev.command(self.now(), m.linear.x, m.linear.y, m.angular.z)
         def actual_cmd_cb(self, m): self.ev.actual_command(self.now(), m.linear.x, m.linear.y, m.angular.z)
