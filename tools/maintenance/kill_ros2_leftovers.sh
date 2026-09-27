@@ -71,7 +71,7 @@ done
 
 SCRIPT_PID=$$
 SCRIPT_NAME=$(basename "$0")
-WORKSPACE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORKSPACE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 PRESERVED_RECORDER="${WORKSPACE_DIR}/autostart_mid360_record/mid360_mapping_record.sh"
 
 is_preserved_recorder_process() {
@@ -163,7 +163,6 @@ match_known_ros_command() {
     "livox_ros_driver"
     "mid360"
     "pb2025_nav_bringup"
-    "hero_lidar"
     "auto_nav.py"
     "hp_nav.py"
     "hp_gimbal_nav.py"

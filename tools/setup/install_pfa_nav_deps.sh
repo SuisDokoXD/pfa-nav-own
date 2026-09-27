@@ -12,8 +12,8 @@ if ! grep -q 'VERSION_CODENAME=jammy' /etc/os-release; then
   exit 1
 fi
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-cd "$SCRIPT_DIR"
+WORKSPACE=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$WORKSPACE"
 
 sudo apt-get update
 sudo apt-get install -y \
@@ -108,6 +108,6 @@ set -u
 rosdep install -r --from-paths src --ignore-src --rosdistro humble -y --skip-keys pb2025_sentry_nav
 
 echo "Dependencies installed. To build:"
-echo "  cd $SCRIPT_DIR"
+echo "  cd $WORKSPACE"
 echo "  source /opt/ros/humble/setup.bash"
 echo "  colcon build --symlink-install --parallel-workers 2 --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF"

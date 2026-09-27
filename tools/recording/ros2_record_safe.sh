@@ -7,7 +7,7 @@ set -Eeuo pipefail
 #   ~/ros2_record_safe.sh
 #   RECORD_ALL=1 ~/ros2_record_safe.sh   # force all topics even with arguments
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 BAG_ROOT="${BAG_ROOT:-$SCRIPT_DIR/ros2_bag}"
 BAG_NAME="${BAG_NAME:-run_$(date +%F_%H-%M-%S)}"

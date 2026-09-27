@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # Start Gazebo and simulation SLAM, then press Ctrl+C after mapping. The script saves the
 # final grid map and installs the newest PCD into simulation prior-navigation paths.
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BRINGUP_DIR="$SCRIPT_DIR/src/pb2025_sentry_nav/pb2025_nav_bringup"
 POINT_LIO_PCD_DIR="$SCRIPT_DIR/src/pb2025_sentry_nav/point_lio/PCD"
 SIM_MAP_DIR="$BRINGUP_DIR/map/simulation"

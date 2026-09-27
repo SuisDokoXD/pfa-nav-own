@@ -27,7 +27,7 @@ ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py slam:=True
 一键仿真建图并覆盖仿真先验导航的 `game` 地图：
 
 ```bash
-./sim_slam_install_map.sh rmuc_2026
+./tools/match_start/simulation/sim_slam_install_map.sh rmuc_2026
 ```
 
 脚本会先用 `rmuc_2026` 启动 Gazebo 仿真世界，再启动仿真 SLAM；跑完需要建图的区域后按 `Ctrl+C`，它会保存最终 `.pgm/.yaml`，关闭建图让 point_lio 写出最新 `.pcd`，然后统一改名并覆盖安装到：
@@ -44,7 +44,7 @@ src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/simulation/game.pcd
 建图归位后，一键启动 Gazebo + 仿真先验导航模式：
 
 ```bash
-./sim_prior_nav_game.sh rmuc_2026
+./tools/match_start/simulation/sim_prior_nav_game.sh rmuc_2026
 ```
 
 这里 `rmuc_2026` 是 Gazebo 世界，导航默认读取 `world:=game`，即刚才覆盖安装的 `game.yaml` 和 `pcd/simulation/scans.pcd`。
@@ -131,7 +131,7 @@ ros2 run nav2_map_server map_saver_cli -f game
 保存完成后再结束建图程序，让 point_lio 写出 `src/pb2025_sentry_nav/point_lio/PCD/scans.pcd`。随后在工作空间根目录运行脚本，把实车地图和点云放到导航默认读取的位置：
 
 ```bash
-bash prepare_reality_map.sh game
+bash tools/map/prepare_reality_map.sh game
 ```
 
 脚本会执行这些操作：
@@ -143,13 +143,13 @@ bash prepare_reality_map.sh game
 如果保存地图时使用了别的名字，例如 `my_map.yaml` / `my_map.pgm`，但导航时仍想用 `world:=game`：
 
 ```bash
-bash prepare_reality_map.sh game --map-name my_map
+bash tools/map/prepare_reality_map.sh game --map-name my_map
 ```
 
 如果目标目录已有同名文件，需要覆盖：
 
 ```bash
-bash prepare_reality_map.sh game --force
+bash tools/map/prepare_reality_map.sh game --force
 ```
 
 移动完成后无需重新编译，可以直接启动实车导航：

@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # Real-robot localization and navigation entry point. Resolve every path from
 # this repository so an older pfa-nav workspace can never be sourced silently.
-WORKSPACE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SETUP_FILE="${SETUP_FILE:-$WORKSPACE/install/setup.bash}"
 MAP_FILE="${MAP_FILE:-$WORKSPACE/src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/game.yaml}"
 PCD_FILE="${PCD_FILE:-$WORKSPACE/src/pb2025_sentry_nav/point_lio/PCD/scans.pcd}"

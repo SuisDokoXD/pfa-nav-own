@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # Starts a Gazebo competition world, then starts pb2025 simulation navigation
 # using the installed prior map, defaulting to world:=game.
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 GAZEBO_WORLD="${GAZEBO_WORLD:-rmuc_2026}"
 NAV_WORLD="${NAV_WORLD:-game}"
