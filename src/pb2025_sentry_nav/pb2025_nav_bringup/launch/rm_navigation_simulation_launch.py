@@ -230,19 +230,6 @@ def generate_launch_description():
         parameters=[configured_params],
     )
 
-    # start_hero_lidar = Node(
-    #     package="hero_lidar",
-    #     executable="hero_lidar",
-    #     name="hero_lidar",
-    #     output="screen",
-    #     namespace=namespace,
-    #     parameters=[configured_params],
-    #     remappings=[
-    #         ("/tf", "tf"),
-    #         ("/tf_static", "tf_static"),
-    #     ],
-    # )
-
     rviz_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "rviz_launch.py")),
         condition=IfCondition(use_rviz),
@@ -314,7 +301,6 @@ def generate_launch_description():
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_velodyne_convert_tool)
-    # ld.add_action(start_hero_lidar)
     ld.add_action(bringup_cmd)
     ld.add_action(joy_teleop_cmd)
     ld.add_action(rviz_cmd)

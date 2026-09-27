@@ -49,5 +49,4 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `hero_lidar` 节点 | 当前未调用 | `rm_navigation_simulation_launch.py` 中相关 `Node(...)` 和 `ld.add_action(start_hero_lidar)` 都是注释状态。 |
 | `loop_closure_3d` | 当前未接入 | 这层 launch 没有 include/启动 loop closure 包。 |
