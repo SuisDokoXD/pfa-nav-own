@@ -22,8 +22,273 @@ from tkinter import messagebox, simpledialog, ttk
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SIMULATION_GOAL_DIR = PROJECT_ROOT / "online_slam_goals" / "simulation"
+REALITY_GOAL_DIR = PROJECT_ROOT / "online_slam_goals" / "reality"
+ENVIRONMENT_DEFAULTS = {
+    "simulation": {"namespace": "red_standard_robot1", "use_sim_time": True, "goal_dir": SIMULATION_GOAL_DIR},
+    "reality": {"namespace": "", "use_sim_time": False, "goal_dir": REALITY_GOAL_DIR},
+}
 CORE_SCRIPT = Path(__file__).resolve().with_name("online_slam_goal.py")
+SCORER_SCRIPT = PROJECT_ROOT / "nav_eval" / "nav_score.py"
 ROUTE_FORMAT = "pfa_online_slam_route/v1"
+
+
+class ScoreDashboard:
+    """Small live score window shared by single-goal and route tests."""
+
+    COMPONENT_NAMES = (
+        ("ground_truth", "仿真真值闭环"),
+        ("tracking", "路径跟踪"),
+        ("safety", "安全距离"),
+        ("scan_stability", "激光稳定性/噪点"),
+        ("path_smoothness", "路径平滑度"),
+        ("planning", "规划稳定性"),
+        ("speed_tracking", "速度跟踪"),
+        ("tf_consistency", "TF 一致性"),
+    )
+    CURVE_METRICS = (
+        ("quality_score", "质量估计分", 0.0, 100.0, "#1769aa"),
+        ("mean_tracking_error_m", "跟踪误差 (m)", 0.0, None, "#c62828"),
+        ("min_obstacle_distance_m", "最小障碍距离 (m)", 0.0, None, "#2e7d32"),
+        ("mean_scan_spike_rate", "激光尖峰率", 0.0, 1.0, "#8e24aa"),
+    )
+
+    def __init__(self, owner):
+        self.owner = owner
+        self.window = tk.Toplevel(owner.root)
+        self.window.title("导航评分可视化")
+        self.window.geometry("680x900")
+        self.window.minsize(600, 700)
+        self.window.protocol("WM_DELETE_WINDOW", self.window.withdraw)
+        self.score_var = tk.StringVar(value="--")
+        self.state_var = tk.StringVar(value="等待评分任务")
+        self.detail_vars = {}
+        self.bars = {}
+        self.series = []
+        self.last_finished_score = None
+
+        viewport = ttk.Frame(self.window)
+        viewport.pack(fill="both", expand=True)
+        view_canvas = tk.Canvas(viewport, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=view_canvas.yview)
+        view_canvas.configure(yscrollcommand=scrollbar.set)
+        view_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        outer = ttk.Frame(view_canvas, padding=18)
+        outer_id = view_canvas.create_window((0, 0), window=outer, anchor="nw")
+
+        def update_scroll_region(_event=None):
+            view_canvas.configure(scrollregion=view_canvas.bbox("all"))
+
+        def fit_content_width(event):
+            view_canvas.itemconfigure(outer_id, width=event.width)
+
+        outer.bind("<Configure>", update_scroll_region)
+        view_canvas.bind("<Configure>", fit_content_width)
+        header = ttk.Frame(outer)
+        header.pack(fill="x")
+        ttk.Label(header, text="导航质量评分", font=("Sans", 18, "bold")).pack(side="left")
+        ttk.Label(header, textvariable=self.state_var).pack(side="right", pady=5)
+
+        score_frame = ttk.Frame(outer)
+        score_frame.pack(fill="x", pady=(16, 12))
+        ttk.Label(score_frame, textvariable=self.score_var, font=("Sans", 34, "bold")).pack(side="left")
+        ttk.Label(score_frame, text=" / 100", font=("Sans", 15)).pack(side="left", pady=(18, 0))
+        self.summary_var = tk.StringVar(value="尚未收到评分数据")
+        ttk.Label(score_frame, textvariable=self.summary_var, wraplength=330, justify="left").pack(
+            side="left", padx=(24, 0), pady=4
+        )
+
+        ttk.Separator(outer).pack(fill="x", pady=(0, 10))
+        ttk.Label(outer, text="综合分项（0~100%）", font=("Sans", 11, "bold")).pack(anchor="w")
+        components = ttk.Frame(outer)
+        components.pack(fill="x", pady=(8, 10))
+        for row, (key, label) in enumerate(self.COMPONENT_NAMES):
+            ttk.Label(components, text=label, width=17).grid(row=row, column=0, sticky="w", pady=3)
+            bar = ttk.Progressbar(components, maximum=100, length=270)
+            bar.grid(row=row, column=1, sticky="ew", padx=(6, 10), pady=3)
+            value = tk.StringVar(value="--")
+            ttk.Label(components, textvariable=value, width=8).grid(row=row, column=2, sticky="e", pady=3)
+            self.bars[key] = bar
+            self.detail_vars[key] = value
+        components.columnconfigure(1, weight=1)
+
+        details = ttk.LabelFrame(outer, text="关键观测值", padding=10)
+        details.pack(fill="x", pady=(4, 0))
+        detail_items = (
+            ("mean_tracking_error_m", "平均跟踪误差", "m"),
+            ("min_obstacle_distance_m", "最小障碍距离", "m"),
+            ("mean_scan_spike_rate", "激光尖峰率", ""),
+            ("mean_stationary_scan_jitter_m", "静止扫描抖动", "m"),
+            ("replans", "全局重规划次数", ""),
+            ("local_replans", "局部重规划次数", ""),
+            ("duration_s", "导航耗时", "s"),
+            ("final_position_error_m", "最终位置误差", "m"),
+        )
+        for index, (key, label, unit) in enumerate(detail_items):
+            row, column = divmod(index, 2)
+            var = tk.StringVar(value="--")
+            self.detail_vars["detail_" + key] = var
+            ttk.Label(details, text=label).grid(row=row, column=column * 2, sticky="w", padx=(0, 5), pady=3)
+            ttk.Label(details, textvariable=var, width=13).grid(row=row, column=column * 2 + 1, sticky="w", padx=(0, 18), pady=3)
+        self.unit_map = {"detail_" + key: unit for key, _, unit in detail_items}
+
+        ttk.Label(outer, text="当前任务纵向曲线", font=("Sans", 11, "bold")).pack(anchor="w", pady=(12, 4))
+        self.chart_canvas = tk.Canvas(
+            outer, height=370, background="#fbfbfb", highlightthickness=1,
+            highlightbackground="#c7c7c7",
+        )
+        self.chart_canvas.pack(fill="x", expand=False)
+        ttk.Label(outer, text="历次测试总分趋势（读取 scores/，用于调参前后对比）", font=("Sans", 11, "bold")).pack(
+            anchor="w", pady=(12, 4)
+        )
+        self.history_canvas = tk.Canvas(
+            outer, height=145, background="#fbfbfb", highlightthickness=1,
+            highlightbackground="#c7c7c7",
+        )
+        self.history_canvas.pack(fill="x", expand=False)
+
+        ttk.Label(
+            outer,
+            text="仿真模式使用 chassis_odometry_gt 作为真值；实车模式会隐藏真值项，不因缺失真值扣分。",
+            foreground="#555555",
+            wraplength=590,
+            justify="left",
+        ).pack(anchor="w", pady=(12, 0))
+
+    def show(self):
+        self.window.deiconify()
+        self.window.lift()
+        self._draw_history_curve()
+
+    def update(self, result, finished=False):
+        self._append_series(result)
+        score = result.get("score")
+        self.score_var.set(f"{score:.1f}" if isinstance(score, (int, float)) else "--")
+        success = result.get("success")
+        if finished:
+            state = "导航成功" if success else "导航失败/未完成"
+        elif result.get("samples", 0):
+            state = "实时采集中"
+        else:
+            state = "等待导航数据"
+        self.state_var.set(state)
+        environment = "仿真" if result.get("environment") == "simulation" else "实车"
+        self.summary_var.set(f"环境：{environment}    样本：{result.get('samples', 0)}\n"
+                             f"成功状态：{('成功' if success else '失败') if success is not None else '进行中'}")
+        components = result.get("components") or {}
+        for key, _label in self.COMPONENT_NAMES:
+            value = components.get(key)
+            if isinstance(value, (int, float)):
+                self.bars[key]["value"] = max(0.0, min(100.0, value * 100.0))
+                self.detail_vars[key].set(f"{value * 100.0:.1f}%")
+            else:
+                self.bars[key]["value"] = 0
+                self.detail_vars[key].set("--")
+        for key, unit in self.unit_map.items():
+            value = result.get(key.removeprefix("detail_"))
+            if isinstance(value, (int, float)):
+                self.detail_vars[key].set(f"{value:.3f} {unit}".strip())
+            else:
+                self.detail_vars[key].set("--")
+        if finished and isinstance(score, (int, float)):
+            self.last_finished_score = float(score)
+        self._draw_current_curves()
+        self._draw_history_curve()
+
+    def get_series(self):
+        return list(self.series)
+
+    def _append_series(self, result):
+        values = {key: result.get(key) for key, *_ in self.CURVE_METRICS}
+        values["samples"] = result.get("samples")
+        values["duration_s"] = result.get("duration_s")
+        if self.series:
+            previous = self.series[-1]
+            signature = tuple(values.get(key) for key in (*[m[0] for m in self.CURVE_METRICS], "samples", "duration_s"))
+            previous_signature = tuple(previous.get(key) for key in (*[m[0] for m in self.CURVE_METRICS], "samples", "duration_s"))
+            if signature == previous_signature:
+                return
+        self.series.append(values)
+
+    @staticmethod
+    def _finite(value):
+        return isinstance(value, (int, float)) and math.isfinite(value)
+
+    def _draw_current_curves(self):
+        canvas = self.chart_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 620)
+        height = 370
+        row_height = height / len(self.CURVE_METRICS)
+        left, right = 118, width - 18
+        for row, (key, label, lower, upper, color) in enumerate(self.CURVE_METRICS):
+            top = row * row_height
+            bottom = (row + 1) * row_height - 8
+            canvas.create_text(8, top + 12, text=label, anchor="w", fill="#333333")
+            canvas.create_line(left, bottom, right, bottom, fill="#dddddd")
+            canvas.create_line(left, top + 22, left, bottom, fill="#dddddd")
+            values = [item.get(key) for item in self.series]
+            finite = [float(value) for value in values if self._finite(value)]
+            if not finite:
+                canvas.create_text((left + right) / 2, (top + bottom) / 2, text="等待数据", fill="#888888")
+                continue
+            min_value = lower if upper is not None else min(lower, min(finite))
+            max_value = upper if upper is not None else max(max(finite) * 1.15, min_value + 0.05)
+            if max_value <= min_value:
+                max_value = min_value + 1.0
+            canvas.create_text(left - 6, top + 24, text=f"{max_value:.2f}", anchor="e", fill="#777777")
+            canvas.create_text(left - 6, bottom, text=f"{min_value:.2f}", anchor="e", fill="#777777")
+            previous = None
+            count = max(1, len(values) - 1)
+            for index, value in enumerate(values):
+                if not self._finite(value):
+                    previous = None
+                    continue
+                x = left + (right - left) * index / count
+                y = bottom - (float(value) - min_value) / (max_value - min_value) * (bottom - top - 28)
+                if previous is not None:
+                    canvas.create_line(previous[0], previous[1], x, y, fill=color, width=2)
+                canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline=color)
+                previous = (x, y)
+            canvas.create_text(right, top + 12, text=f"n={len(values)}", anchor="e", fill="#777777")
+
+    def _draw_history_curve(self):
+        canvas = self.history_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 620)
+        height = 145
+        left, right, top, bottom = 52, width - 18, 18, height - 28
+        scores = []
+        history_dir = getattr(self.owner, "score_history_dir", None)
+        if history_dir is not None:
+            for path in sorted(history_dir.glob("score_*.json"), key=lambda item: item.stat().st_mtime):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    value = payload.get("score")
+                    if self._finite(value):
+                        scores.append((path.stem[-12:], float(value)))
+                except (OSError, json.JSONDecodeError):
+                    continue
+        if self.last_finished_score is not None:
+            scores.append(("当前", self.last_finished_score))
+        if not scores:
+            canvas.create_text(width / 2, height / 2, text="完成一次评分后显示历史曲线", fill="#888888")
+            return
+        scores = scores[-20:]
+        canvas.create_line(left, bottom, right, bottom, fill="#dddddd")
+        canvas.create_line(left, top, left, bottom, fill="#dddddd")
+        canvas.create_text(left - 6, top, text="100", anchor="e", fill="#777777")
+        canvas.create_text(left - 6, bottom, text="0", anchor="e", fill="#777777")
+        count = max(1, len(scores) - 1)
+        previous = None
+        for index, (label, score) in enumerate(scores):
+            x = left + (right - left) * index / count
+            y = bottom - max(0.0, min(100.0, score)) / 100.0 * (bottom - top)
+            if previous is not None:
+                canvas.create_line(previous[0], previous[1], x, y, fill="#1769aa", width=2)
+            canvas.create_oval(x - 3, y - 3, x + 3, y + 3, fill="#1769aa", outline="#1769aa")
+            canvas.create_text(x, bottom + 10, text=label[-8:], anchor="n", fill="#555555")
+            previous = (x, y)
 
 
 def safe_name(value):
@@ -74,6 +339,7 @@ class GoalLauncher:
         self,
         root,
         namespace,
+        environment,
         goal_dir,
         use_sim_time,
         start_mode,
@@ -82,6 +348,7 @@ class GoalLauncher:
     ):
         self.root = root
         self.namespace = namespace.strip("/")
+        self.environment = environment
         self.goal_dir = Path(goal_dir).expanduser()
         self.use_sim_time = bool(use_sim_time)
         self.start_mode = start_mode
@@ -90,7 +357,15 @@ class GoalLauncher:
         self.goal_dir.mkdir(parents=True, exist_ok=True)
         self.route_dir = self.goal_dir / "routes"
         self.route_dir.mkdir(parents=True, exist_ok=True)
+        self.score_history_dir = self.goal_dir / "scores"
+        self.score_history_dir.mkdir(parents=True, exist_ok=True)
         self.child = None
+        self.score_child = None
+        self.score_result_file = None
+        self.score_report_file = None
+        self.score_started = False
+        self.score_started_at = None
+        self.score_dashboard = None
         self.pending_file = None
         self.name_prompt_open = False
         self.closing = False
@@ -116,6 +391,17 @@ class GoalLauncher:
 
         buttons = ttk.Frame(frame)
         buttons.pack()
+        self.score_enabled = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame,
+            text="启用本次导航评分（实时显示面板，结束后保存结果）",
+            variable=self.score_enabled,
+        ).pack(pady=(0, 8))
+        ttk.Button(
+            frame,
+            text="打开评分可视化面板",
+            command=self.open_score_dashboard,
+        ).pack(pady=(0, 8))
         ttk.Button(
             buttons,
             text="录入并导航",
@@ -182,34 +468,196 @@ class GoalLauncher:
         ]
         self.status.config(text="已启动 ROS 目标节点，请查看终端输出和 RViz。")
         self.child = subprocess.Popen(command, cwd=str(PROJECT_ROOT))
+        self.root.after(500, self.watch_navigation)
+
+    def watch_navigation(self):
+        if self.child is None:
+            return
+        if self.child.poll() is None:
+            self.root.after(500, self.watch_navigation)
+            return
+        self.child = None
+        if self.score_child is not None:
+            self.stop_scorer()
+
+    def _score_topics(self):
+        prefix = f"/{self.namespace}" if self.namespace else ""
+        return {
+            "odom": prefix + "/odometry",
+            "cmd": prefix + "/cmd_vel_nav2_result",
+            "actual_cmd": prefix + "/cmd_vel",
+            "path": prefix + "/plan",
+            "local_path": prefix + "/local_plan",
+            "scan": prefix + "/obstacle_scan",
+            "action_status": prefix + "/navigate_to_pose/_action/status",
+        }
+
+    def start_scorer(self, goal_data, goal_frame=None):
+        if not self.score_enabled.get() or self.score_child is not None:
+            return
+        try:
+            goal_x = float(goal_data["x"])
+            goal_y = float(goal_data["y"])
+        except (KeyError, TypeError, ValueError):
+            self.status.config(text="目标已启动，但目标坐标无效，未启动评分器。")
+            return
+        topics = self._score_topics()
+        result_file = self.goal_dir / f".score_{os.getpid()}.json"
+        report_file = self.goal_dir / f".score_live_{os.getpid()}.json"
+        if result_file.exists():
+            result_file.unlink()
+        if report_file.exists():
+            report_file.unlink()
+        self.score_result_file = result_file
+        self.score_report_file = report_file
+        command = [
+            sys.executable, str(SCORER_SCRIPT), "score_live",
+            "--namespace", self.namespace,
+            "--environment", self.environment,
+            "--goal-x", str(goal_x), "--goal-y", str(goal_y),
+            "--odom-topic", topics["odom"], "--cmd-topic", topics["cmd"],
+            "--actual-cmd-topic", topics["actual_cmd"],
+            "--path-topic", topics["path"], "--local-path-topic", topics["local_path"],
+            "--scan-topic", topics["scan"],
+            "--action-status-topic", topics["action_status"],
+            "--global-frame", "map", "--nav-base-frame", "gimbal_yaw_fake",
+            "--goal-frame", str(goal_frame or goal_data.get("frame", "odom")),
+            "--live-report",
+            "--result-file", str(result_file),
+            "--live-report-file", str(report_file),
+        ]
+        self.score_child = subprocess.Popen(
+            command, cwd=str(PROJECT_ROOT),
+            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+        )
+        self.score_started = True
+        self.score_started_at = f"{time.strftime('%Y%m%d_%H%M%S')}_{time.time_ns()}"
+        self.open_score_dashboard()
+        self._poll_score_report()
+
+    def open_score_dashboard(self):
+        if self.score_dashboard is None or not self.score_dashboard.window.winfo_exists():
+            self.score_dashboard = ScoreDashboard(self)
+        self.score_dashboard.show()
+
+    def _poll_score_report(self):
+        report_file = self.score_report_file
+        if report_file is not None and report_file.exists():
+            try:
+                result = json.loads(report_file.read_text(encoding="utf-8"))
+                self.open_score_dashboard()
+                self.score_dashboard.update(result)
+            except (OSError, json.JSONDecodeError, tk.TclError):
+                pass
+        if self.score_child is not None and self.score_child.poll() is None:
+            self.root.after(500, self._poll_score_report)
+
+    def stop_scorer(self):
+        child = self.score_child
+        self.score_child = None
+        if child is not None and child.poll() is None:
+            try:
+                child.send_signal(signal.SIGINT)
+                child.wait(timeout=4)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                if child.poll() is None:
+                    child.terminate()
+                    try:
+                        child.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait()
+        result_file = self.score_result_file
+        report_file = self.score_report_file
+        self.score_result_file = None
+        self.score_report_file = None
+        self.score_started = False
+        result = None
+        try:
+            if result_file is not None and result_file.exists():
+                result = json.loads(result_file.read_text(encoding="utf-8"))
+            elif report_file is not None and report_file.exists():
+                result = json.loads(report_file.read_text(encoding="utf-8"))
+            if result is not None:
+                self.open_score_dashboard()
+                self.score_dashboard.update(result, finished=True)
+                score = result.get("score")
+                score_text = f"{score:.1f}/100" if isinstance(score, (int, float)) else "暂无分数"
+                state = "成功" if result.get("success") else "失败/未完成"
+                self.status.config(text=f"本次导航：{state}，综合评分 {score_text}")
+                history_name = f"score_{self.score_started_at or time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}.json"
+                history_file = self.score_history_dir / history_name
+                history_payload = dict(result)
+                history_payload.update(
+                    {
+                        "gui_environment": self.environment,
+                        "gui_namespace": self.namespace,
+                        "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                        "series": (
+                            self.score_dashboard.get_series()
+                            if self.score_dashboard is not None
+                            else []
+                        ),
+                    }
+                )
+                try:
+                    history_file.write_text(
+                        json.dumps(history_payload, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                    self.status.config(text=f"本次导航：{state}，综合评分 {score_text}，已保存 {history_file.name}")
+                except OSError:
+                    pass
+                messagebox.showinfo(
+                    "导航评分",
+                    f"综合评分：{score_text}\n结果：{state}\n"
+                    f"平均跟踪误差：{result.get('mean_tracking_error_m')} m\n"
+                    f"最小障碍距离：{result.get('min_obstacle_distance_m')} m\n"
+                    f"实际路径长度：{result.get('path_length_m')} m",
+                    parent=self.root,
+                )
+        except (OSError, json.JSONDecodeError, tk.TclError):
+            self.status.config(text="导航结束，但评分结果无法读取。")
+        try:
+            result_file.unlink()
+        except OSError:
+            pass
+        if report_file is not None:
+            try:
+                report_file.unlink()
+            except OSError:
+                pass
 
     def stop_child(self):
         child = self.child
         self.child = None
         if child is None or child.poll() is not None:
+            self.stop_scorer()
             return
 
         try:
             child.send_signal(signal.SIGINT)
         except ProcessLookupError:
-            child.wait()
-            return
-        try:
-            child.wait(timeout=3)
-            return
-        except subprocess.TimeoutExpired:
-            child.terminate()
-        try:
-            child.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            child.wait()
+            pass
+        if child.poll() is None:
+            try:
+                child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                child.terminate()
+        if child.poll() is None:
+            try:
+                child.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+        self.stop_scorer()
 
     def close(self):
         if self.closing:
             return
         self.closing = True
         self.stop_child()
+        self.stop_scorer()
         if self.pending_file is not None and self.pending_file.exists():
             self.pending_file.unlink()
         self.pending_file = None
@@ -268,6 +716,12 @@ class GoalLauncher:
         if not self.confirm_test_start():
             self.status.config(text="已取消实车测试放行，未启动目标节点。")
             return False
+        try:
+            goal_data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            messagebox.showerror("目标读取失败", str(exc), parent=self.root)
+            return False
+        self.start_scorer(goal_data)
         self.start_core(["--use-saved-goal", "--goal-file", str(path)])
         self.status.config(text=f"已使用目标：{path.name}，等待地图和 TF 后自动导航。")
         return True
@@ -293,6 +747,13 @@ class GoalLauncher:
         if not self.confirm_test_start():
             self.status.config(text="已取消实车测试放行，未启动路线节点。")
             return False
+        try:
+            route = json.loads(path.read_text(encoding="utf-8"))
+            waypoints = route.get("waypoints", [])
+            if waypoints:
+                self.start_scorer(waypoints[-1], route.get("frame", "odom"))
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
         self.start_core(["--use-saved-route", "--route-file", str(path)])
         self.status.config(text=f"已使用路线：{path.name}，将按顺序逐点导航。")
         return True
@@ -346,6 +807,11 @@ class GoalLauncher:
         if self.pending_file is None or self.name_prompt_open:
             return
         if self.pending_file.exists():
+            if not self.pending_record_only and not self.score_started:
+                try:
+                    self.start_scorer(json.loads(self.pending_file.read_text(encoding="utf-8")))
+                except (OSError, json.JSONDecodeError):
+                    pass
             self.name_prompt_open = True
             self.root.after(50, self.name_pending_goal)
             return
@@ -576,12 +1042,16 @@ class GoalLauncher:
 def main():
     parser = argparse.ArgumentParser(description="在线建图导航目标可视化管理器")
     parser.add_argument(
-        "--namespace", default="red_standard_robot1", help="机器人 ROS 命名空间"
+        "--environment", choices=tuple(ENVIRONMENT_DEFAULTS), default="simulation",
+        help="运行环境；仿真默认 namespace 为 red_standard_robot1，实车默认为空",
+    )
+    parser.add_argument(
+        "--namespace", default=None, help="覆盖环境默认的 ROS 命名空间"
     )
     parser.add_argument(
         "--use-sim-time",
         choices=("true", "false"),
-        default="true",
+        default=None,
         help="是否使用 /clock；仿真用 true，实车用 false",
     )
     parser.add_argument(
@@ -602,8 +1072,8 @@ def main():
     )
     parser.add_argument(
         "--goal-dir",
-        default=str(SIMULATION_GOAL_DIR),
-        help="目标 JSON 目录；默认使用项目内的仿真目标目录",
+        default=None,
+        help="目标 JSON 目录；默认按 environment 选择 simulation/reality 目录",
     )
     parser.add_argument(
         "--auto-goal",
@@ -630,7 +1100,14 @@ def main():
     if args.auto_goal and args.auto_route:
         parser.error("--auto-goal 和 --auto-route 不能同时使用")
 
-    goal_dir = Path(args.goal_dir).expanduser()
+    environment_defaults = ENVIRONMENT_DEFAULTS[args.environment]
+    namespace = (args.namespace if args.namespace is not None else environment_defaults["namespace"])
+    use_sim_time = (
+        args.use_sim_time == "true"
+        if args.use_sim_time is not None
+        else environment_defaults["use_sim_time"]
+    )
+    goal_dir = Path(args.goal_dir or environment_defaults["goal_dir"]).expanduser()
     goal_dir.mkdir(parents=True, exist_ok=True)
     if args.list_goals:
         for path in sorted(goal_dir.glob("*.json")):
@@ -647,9 +1124,10 @@ def main():
     root = tk.Tk()
     launcher = GoalLauncher(
         root,
-        args.namespace,
+        namespace,
+        args.environment,
         goal_dir,
-        use_sim_time=args.use_sim_time == "true",
+        use_sim_time=use_sim_time,
         start_mode=args.start_mode,
         game_status_topic=args.game_status_topic,
         confirm_before_start=args.confirm_before_start,

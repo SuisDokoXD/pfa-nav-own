@@ -251,6 +251,7 @@ NAV_PID=$!
 
 tool_command=(
     python3 "$GOAL_GUI"
+    --environment reality
     --namespace "$NAMESPACE"
     --goal-dir "$GOAL_DIR"
     --use-sim-time false
