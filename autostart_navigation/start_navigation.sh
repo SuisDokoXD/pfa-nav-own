@@ -9,4 +9,4 @@ export WORKSPACE
 export USE_RVIZ="${USE_RVIZ:-False}"
 export NAMESPACE="${NAMESPACE:-}"
 
-exec "$WORKSPACE/nav.sh"
+exec "$WORKSPACE/tools/match_start/reality/nav.sh"

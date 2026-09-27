@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Exec=/usr/bin/env USE_RVIZ=True /home/pfa/sight/new/pfa-nav/nav.sh
+Exec=/usr/bin/env USE_RVIZ=True __WORKSPACE__/tools/match_start/reality/nav.sh
 Hidden=true
 NoDisplay=false
 X-GNOME-Autostart-enabled=false

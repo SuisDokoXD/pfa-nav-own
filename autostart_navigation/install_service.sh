@@ -9,7 +9,7 @@ SERVICE_USER="${SERVICE_USER:-$(id -un)}"
 START_NOW="${START_NOW:-0}"
 
 for required in \
-  "$WORKSPACE/nav.sh" \
+  "$WORKSPACE/tools/match_start/reality/nav.sh" \
   "$WORKSPACE/install/setup.bash" \
   "$WORKSPACE/src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/game.yaml" \
   "$WORKSPACE/src/pb2025_sentry_nav/point_lio/PCD/scans.pcd"; do
@@ -19,7 +19,7 @@ for required in \
   fi
 done
 
-chmod +x "$WORKSPACE/nav.sh" "$SCRIPT_DIR/start_navigation.sh"
+chmod +x "$WORKSPACE/tools/match_start/reality/nav.sh" "$SCRIPT_DIR/start_navigation.sh"
 tmp_service="$(mktemp)"
 trap 'rm -f "$tmp_service"' EXIT
 sed \

@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Exec=/home/pfa/sight/new/pfa-nav/autostart_mid360_record/mid360_mapping_record.sh
+Exec=__WORKSPACE__/autostart_mid360_record/mid360_mapping_record.sh
 Hidden=true
 NoDisplay=false
 X-GNOME-Autostart-enabled=false

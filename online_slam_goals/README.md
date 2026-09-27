@@ -12,7 +12,7 @@
 以下命令都在项目根目录执行：
 
 ```bash
-cd /home/pfa/sight/new/pfa-nav
+cd /path/to/pfa-nav
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 ```

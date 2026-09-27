@@ -11,4 +11,4 @@
 ./autostart_desktop/install_desktop_autostart.sh
 ```
 
-安装器会禁用原来指向 `/home/pfa/sight/pfa-nav` 的两个旧自启项，但不删除它们。
+安装器会禁用原来指向旧工作区的两个旧自启项，但不删除它们。
