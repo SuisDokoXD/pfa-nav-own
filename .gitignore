@@ -17,6 +17,11 @@ ros2_bag/
 frames_*.gv
 frames_*.pdf
 
+# Live navigation score reports (generated during tests)
+**/.score_*.json
+**/.score_live_*.json
+**/scores/
+
 # ======================================
 # Python
 # ======================================

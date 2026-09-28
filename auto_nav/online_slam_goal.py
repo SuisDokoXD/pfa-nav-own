@@ -9,10 +9,11 @@ machine. The goal can be expressed in the SLAM ``map`` frame or in ``odom``.
 import argparse
 import json
 import math
+import uuid
 from pathlib import Path
 
 import rclpy
-from action_msgs.msg import GoalStatus
+from action_msgs.msg import GoalStatus, GoalStatusArray
 from geometry_msgs.msg import PointStamped, PoseStamped
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
@@ -109,6 +110,11 @@ class OnlineSlamGoal(Node):
         self.latest_map = None
         self.goal_sent = False
         self.finished = False
+        self.active_goal_uuid = None
+        self.active_goal_status_seen = False
+        self.active_goal_terminal_handled = False
+        self.active_goal_sent_at = None
+        self.active_goal_wait_warning_sent = False
         self.start_time = self.get_clock().now()
 
         self.map_sub = self.create_subscription(
@@ -144,9 +150,16 @@ class OnlineSlamGoal(Node):
                 PointStamped, click_topic, self.click_callback, 10
             )
         self.nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
+        self.action_status_sub = self.create_subscription(
+            GoalStatusArray,
+            "navigate_to_pose/_action/status",
+            self.action_status_callback,
+            10,
+        )
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.timer = self.create_timer(0.5, self.try_send_goal)
+        self.action_watchdog = self.create_timer(1.0, self.check_action_progress)
         if self.goal_x is None or self.goal_y is None:
             self.get_logger().info(
                 f"等待 RViz 点击目标 ({click_topic})，点击点坐标将按 {self.goal_frame} 解释"
@@ -318,8 +331,22 @@ class OnlineSlamGoal(Node):
         self.get_logger().info(
             f"地图、TF 和 action 已就绪，发送 {progress}{target_name}"
         )
-        future = self.nav_client.send_goal_async(goal, feedback_callback=self.feedback_callback)
-        future.add_done_callback(self.goal_response_callback)
+        goal_uuid = NavigateToPose.Impl.SendGoalService.Request().goal_id
+        goal_uuid.uuid = list(uuid.uuid4().bytes)
+        goal_uuid_key = bytes(goal_uuid.uuid)
+        self.active_goal_uuid = goal_uuid_key
+        self.active_goal_status_seen = False
+        self.active_goal_terminal_handled = False
+        self.active_goal_sent_at = self.get_clock().now()
+        self.active_goal_wait_warning_sent = False
+        future = self.nav_client.send_goal_async(
+            goal,
+            feedback_callback=self.feedback_callback,
+            goal_uuid=goal_uuid,
+        )
+        future.add_done_callback(
+            lambda completed: self.goal_response_callback(completed, goal_uuid_key)
+        )
 
     def feedback_callback(self, feedback_msg):
         distance = feedback_msg.feedback.distance_remaining
@@ -328,12 +355,20 @@ class OnlineSlamGoal(Node):
             prefix = f"路线点 {self.route_index + 1}/{len(self.route_waypoints)} "
         self.get_logger().info(f"{prefix}目标剩余距离: {distance:.3f} m")
 
-    def goal_response_callback(self, future):
+    def goal_response_callback(self, future, goal_uuid_key):
+        if goal_uuid_key != self.active_goal_uuid:
+            return
         try:
             goal_handle = future.result()
         except Exception as exc:
-            self.get_logger().error(f"发送目标失败: {exc}")
-            self.finished = True
+            if self.active_goal_status_seen:
+                self.get_logger().warn(
+                    f"goal response 读取失败，但 Nav2 status 已确认目标执行中；"
+                    f"继续等待终态: {exc}"
+                )
+            else:
+                self.get_logger().error(f"发送目标失败: {exc}")
+                self.finished = True
             return
         if not goal_handle.accepted:
             self.get_logger().error("Nav2 拒绝了目标")
@@ -341,19 +376,86 @@ class OnlineSlamGoal(Node):
             return
         self.get_logger().info("Nav2 已接受目标，等待结果")
         result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self.result_callback)
+        result_future.add_done_callback(
+            lambda completed: self.result_callback(completed, goal_uuid_key)
+        )
 
-    def result_callback(self, future):
+    def action_status_callback(self, msg):
+        # The goal response and status streams are independent DDS paths. Keep
+        # the route moving when status confirms execution before the response
+        # future is delivered, while matching only the active goal UUID.
+        goal_uuid_key = self.active_goal_uuid
+        if goal_uuid_key is None:
+            return
+        for item in msg.status_list:
+            if bytes(item.goal_info.goal_id.uuid) != goal_uuid_key:
+                continue
+            status = item.status
+            if status in (
+                GoalStatus.STATUS_ACCEPTED,
+                GoalStatus.STATUS_EXECUTING,
+                GoalStatus.STATUS_CANCELING,
+            ):
+                if not self.active_goal_status_seen:
+                    self.active_goal_status_seen = True
+                    self.get_logger().warn(
+                        "已从 Nav2 action status 确认目标正在执行；"
+                        "若 goal response 丢失，将依据状态话题推进路线"
+                    )
+                return
+            if status in (
+                GoalStatus.STATUS_SUCCEEDED,
+                GoalStatus.STATUS_CANCELED,
+                GoalStatus.STATUS_ABORTED,
+            ):
+                self.complete_active_goal(status, "action status")
+                return
+
+    def check_action_progress(self):
+        if self.active_goal_uuid is None or self.active_goal_terminal_handled:
+            return
+        if self.active_goal_status_seen or self.active_goal_wait_warning_sent:
+            return
+        elapsed = (
+            self.get_clock().now() - self.active_goal_sent_at
+        ).nanoseconds / 1e9
+        if elapsed >= 5.0:
+            self.active_goal_wait_warning_sent = True
+            self.get_logger().warn(
+                f"已等待 {elapsed:.1f}s，尚未收到该目标的 response/status；"
+                "不会重复发送目标，继续监听 Nav2 状态"
+            )
+
+    def result_callback(self, future, goal_uuid_key):
+        if goal_uuid_key != self.active_goal_uuid:
+            return
         try:
             wrapped = future.result()
-            self.get_logger().info(f"导航结束，状态码: {wrapped.status}")
+            status = wrapped.status
         except Exception as exc:
-            self.get_logger().error(f"读取导航结果失败: {exc}")
-            self.finished = True
+            if self.active_goal_status_seen:
+                self.get_logger().warn(
+                    f"读取导航结果失败，但 Nav2 status 已确认目标执行中；"
+                    f"继续等待终态: {exc}"
+                )
+            else:
+                self.get_logger().error(f"读取导航结果失败: {exc}")
+                self.finished = True
             return
 
+        self.complete_active_goal(status, "result")
+
+    def complete_active_goal(self, status, source):
+        # A terminal status can arrive through both the result future and the
+        # status topic; guard the transition so one waypoint is sent once.
+        if self.active_goal_uuid is None or self.active_goal_terminal_handled:
+            return
+        self.active_goal_terminal_handled = True
+        self.get_logger().info(f"导航结束，状态码: {status}（来源: {source}）")
+        self.active_goal_uuid = None
+
         if (
-            wrapped.status == GoalStatus.STATUS_SUCCEEDED
+            status == GoalStatus.STATUS_SUCCEEDED
             and self.route_waypoints
             and self.route_index + 1 < len(self.route_waypoints)
         ):
@@ -371,7 +473,7 @@ class OnlineSlamGoal(Node):
             )
             return
 
-        if self.route_waypoints and wrapped.status == GoalStatus.STATUS_SUCCEEDED:
+        if self.route_waypoints and status == GoalStatus.STATUS_SUCCEEDED:
             self.get_logger().info("顺序巡航路线已全部完成")
         elif self.route_waypoints:
             self.get_logger().error(

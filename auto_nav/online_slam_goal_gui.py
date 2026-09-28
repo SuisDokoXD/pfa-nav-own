@@ -345,6 +345,7 @@ class GoalLauncher:
         start_mode,
         game_status_topic,
         confirm_before_start,
+        enable_scoring=False,
     ):
         self.root = root
         self.namespace = namespace.strip("/")
@@ -391,7 +392,7 @@ class GoalLauncher:
 
         buttons = ttk.Frame(frame)
         buttons.pack()
-        self.score_enabled = tk.BooleanVar(value=False)
+        self.score_enabled = tk.BooleanVar(value=enable_scoring)
         ttk.Checkbutton(
             frame,
             text="启用本次导航评分（实时显示面板，结束后保存结果）",
@@ -1086,6 +1087,11 @@ def main():
         help="打开窗口后自动使用指定名称的顺序巡航路线",
     )
     parser.add_argument(
+        "--enable-scoring",
+        action="store_true",
+        help="启动时勾选导航评分；不会单独启动导航",
+    )
+    parser.add_argument(
         "--list-goals",
         action="store_true",
         help="输出固定目录中的已保存目标名称并退出",
@@ -1131,6 +1137,7 @@ def main():
         start_mode=args.start_mode,
         game_status_topic=args.game_status_topic,
         confirm_before_start=args.confirm_before_start,
+        enable_scoring=args.enable_scoring,
     )
     if args.auto_goal:
         root.after(150, lambda: launcher.start_saved_goal_by_name(args.auto_goal))
