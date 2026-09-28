@@ -11,7 +11,7 @@ cd ~/src/sight/pfa-nav
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-python3 nav_eval/nav_score.py score_live \
+python3 tools/evaluation/nav_eval/nav_score.py score_live \
   --environment simulation \
   --goal-x 3.2 \
   --goal-y -1.4 \
@@ -21,7 +21,7 @@ python3 nav_eval/nav_score.py score_live \
 实车环境默认使用空 namespace，并使用系统时间：
 
 ```bash
-python3 nav_eval/nav_score.py score_live \
+python3 tools/evaluation/nav_eval/nav_score.py score_live \
   --environment reality \
   --goal-x 3.2 \
   --goal-y -1.4 \
@@ -31,7 +31,7 @@ python3 nav_eval/nav_score.py score_live \
 如果 namespace 不同，可以使用 `--namespace` 覆盖：
 
 ```bash
-python3 nav_eval/nav_score.py score_live \
+python3 tools/evaluation/nav_eval/nav_score.py score_live \
   --environment simulation \
   --namespace my_robot \
   --goal-x 3.2 \
@@ -52,7 +52,7 @@ ros2 bag info /path/to/bag
 然后执行评分：
 
 ```bash
-python3 nav_eval/nav_score.py score_bag /path/to/bag \
+python3 tools/evaluation/nav_eval/nav_score.py score_bag /path/to/bag \
   --environment simulation \
   --goal-x 3.2 \
   --goal-y -1.4 \
@@ -149,9 +149,9 @@ GUI 结束一次评分后会自动把最终结果保存到当前目标目录的 
 先创建调参状态：
 
 ```bash
-python3 nav_eval/sim_tuner.py init \
+python3 tools/evaluation/nav_eval/sim_tuner.py init \
   --base-params src/pb2025_sentry_nav/pb2025_nav_bringup/config/simulation/nav2_params.yaml \
-  --space nav_eval/simulation_tuning_space.yaml \
+  --space tools/evaluation/nav_eval/simulation_tuning_space.yaml \
   --state /tmp/nav_tuning_state.json \
   --output-dir /tmp/nav_tuning_trials \
   --routes route_a route_b route_c \
@@ -161,7 +161,7 @@ python3 nav_eval/sim_tuner.py init \
 生成一轮实验：
 
 ```bash
-python3 nav_eval/sim_tuner.py propose \
+python3 tools/evaluation/nav_eval/sim_tuner.py propose \
   --state /tmp/nav_tuning_state.json
 ```
 
@@ -175,7 +175,7 @@ python3 nav_eval/sim_tuner.py propose \
 外部运行器使用请求中的两个参数文件，分别运行 `routes` 中的固定路线，每条路线重复 `repeats` 次，并使用对应的 `seed`。运行器将 9 次结果聚合成一个评分 JSON，保存为对应的 `plus_result.json` 和 `minus_result.json`。完成后更新参数：
 
 ```bash
-python3 nav_eval/sim_tuner.py tell \
+python3 tools/evaluation/nav_eval/sim_tuner.py tell \
   --state /tmp/nav_tuning_state.json \
   --plus-result /tmp/nav_tuning_trials/iteration_0000/plus_result.json \
   --minus-result /tmp/nav_tuning_trials/iteration_0000/minus_result.json

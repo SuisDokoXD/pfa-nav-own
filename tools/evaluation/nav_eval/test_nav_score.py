@@ -1,6 +1,6 @@
 import unittest
 
-from nav_eval.nav_score import Evaluator
+from .nav_score import Evaluator
 
 
 class EvaluatorRegressionTests(unittest.TestCase):

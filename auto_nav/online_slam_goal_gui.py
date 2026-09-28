@@ -28,7 +28,7 @@ ENVIRONMENT_DEFAULTS = {
     "reality": {"namespace": "", "use_sim_time": False, "goal_dir": REALITY_GOAL_DIR},
 }
 CORE_SCRIPT = Path(__file__).resolve().with_name("online_slam_goal.py")
-SCORER_SCRIPT = PROJECT_ROOT / "nav_eval" / "nav_score.py"
+SCORER_SCRIPT = PROJECT_ROOT / "tools" / "evaluation" / "nav_eval" / "nav_score.py"
 ROUTE_FORMAT = "pfa_online_slam_route/v1"
 
 
