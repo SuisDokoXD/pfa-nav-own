@@ -619,10 +619,11 @@ class GoalLauncher:
                 )
         except (OSError, json.JSONDecodeError, tk.TclError):
             self.status.config(text="导航结束，但评分结果无法读取。")
-        try:
-            result_file.unlink()
-        except OSError:
-            pass
+        if result_file is not None:
+            try:
+                result_file.unlink()
+            except OSError:
+                pass
         if report_file is not None:
             try:
                 report_file.unlink()
