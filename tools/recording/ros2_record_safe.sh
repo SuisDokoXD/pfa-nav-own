@@ -9,7 +9,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-BAG_ROOT="${BAG_ROOT:-$SCRIPT_DIR/ros2_bag}"
+# Keep generic recordings outside the source checkout as well.
+BAG_ROOT="${BAG_ROOT:-/home/pfa/sight/rosbag/general}"
 BAG_NAME="${BAG_NAME:-run_$(date +%F_%H-%M-%S)}"
 OUTPUT_DIR="$BAG_ROOT/$BAG_NAME"
 

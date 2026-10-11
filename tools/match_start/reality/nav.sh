@@ -35,11 +35,10 @@ echo "[pfa_navigation] point cloud: $PCD_FILE"
 echo "[pfa_navigation] namespace: ${NAMESPACE:-<empty>}"
 echo "[pfa_navigation] RViz: $USE_RVIZ"
 
-exec ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+launch_args=(
   world:=game \
   map:="$MAP_FILE" \
   prior_pcd_file:="$PCD_FILE" \
-  namespace:="$NAMESPACE" \
   slam:=False \
   use_sim_time:=False \
   use_robot_state_pub:=True \
@@ -47,3 +46,11 @@ exec ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
   use_rviz:="$USE_RVIZ" \
   auto_save_map:=False \
   auto_save_pcd:=False
+)
+
+# ROS 2 rejects an empty CLI value (namespace:=). The launch defaults to "".
+if [[ -n "$NAMESPACE" ]]; then
+  launch_args+=("namespace:=$NAMESPACE")
+fi
+
+exec ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py "${launch_args[@]}"

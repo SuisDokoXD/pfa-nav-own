@@ -23,6 +23,9 @@ import argparse
 import time
 import math
 import heapq
+from pathlib import Path
+
+DEFAULT_BLUE_WAYPOINTS = str(Path(__file__).resolve().parent / 'config' / 'waypoints_blue.yaml')
 
 ROS_LOG_DEBUG = Log.DEBUG[0]
 ROS_LOG_INFO = Log.INFO[0]
@@ -2036,7 +2039,7 @@ def main():
         '--blue',
         action='store_const',
         dest='yaml',
-        const='waypoints_blue.yaml',
+        const=DEFAULT_BLUE_WAYPOINTS,
         help='读取 waypoints_blue.yaml'
     )
     parser.add_argument(

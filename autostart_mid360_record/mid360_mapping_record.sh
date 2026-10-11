@@ -22,7 +22,9 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE="${WORKSPACE:-$REPO_ROOT}"
 SETUP_FILE="${SETUP_FILE:-$WORKSPACE/install/setup.bash}"
 
-BAG_ROOT="${BAG_ROOT:-$WORKSPACE/ros2_bag/mid360_pointcloud}"
+# Keep recordings outside any checkout so replacing the navigation workspace
+# cannot move or hide the data.
+BAG_ROOT="${BAG_ROOT:-/home/pfa/sight/rosbag/mid360_pointcloud}"
 BAG_NAME="${BAG_NAME:-mid360_pointcloud_$(date +%F_%H-%M-%S)}"
 BAG_PATH="$BAG_ROOT/$BAG_NAME"
 

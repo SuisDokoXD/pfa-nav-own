@@ -208,15 +208,13 @@ source install/setup.bash
 
 (改目录 src/wp_saver.cpp)
 
-```bash
-ros2 run wp_map_tools wp_saver --red
-```
+蓝方血量/弹量导航的航点应保存到当前工作区的配置目录：
 
 ```bash
-ros2 run wp_map_tools wp_saver --blue
+ros2 run wp_map_tools wp_saver -f /home/pfa/sight/new/pfa-nav-own/auto_nav/config/waypoints_blue.yaml
 ```
 
-会保存为waypoints_red,waypoints_blue用于脚本读取
+红方航点也应通过 `-f` 指定实际配置文件路径，避免写入旧工作区。
 
 ## LIO 调参指南（整理自各个 Issue）
 

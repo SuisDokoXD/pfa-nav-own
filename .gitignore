@@ -50,3 +50,5 @@ coverage.xml
 *.orig
 *.bak
 *.bak_*
+# Rolling Point-LIO snapshots generated during mapping
+src/pb2025_sentry_nav/point_lio/PCD/scans_*.pcd

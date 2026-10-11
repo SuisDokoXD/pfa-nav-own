@@ -31,7 +31,7 @@ Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$WORKSPACE
 Environment=WORKSPACE=$WORKSPACE
-Environment=BAG_ROOT=$WORKSPACE/ros2_bag/mid360_pointcloud
+Environment=BAG_ROOT=/home/pfa/sight/rosbag/mid360_pointcloud
 Environment=ROS_LOG_DIR=$WORKSPACE/log/ros
 Environment=RECORD_MODE=$RECORD_MODE
 ExecStart=$SCRIPT_DIR/mid360_mapping_record.sh

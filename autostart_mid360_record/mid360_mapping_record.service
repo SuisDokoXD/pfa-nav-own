@@ -8,7 +8,7 @@ Type=simple
 User=__USER__
 WorkingDirectory=__WORKSPACE__
 Environment=WORKSPACE=__WORKSPACE__
-Environment=BAG_ROOT=__WORKSPACE__/ros2_bag/mid360_pointcloud
+Environment=BAG_ROOT=/home/pfa/sight/rosbag/mid360_pointcloud
 Environment=ROS_LOG_DIR=__WORKSPACE__/log/ros
 Environment=RECORD_MODE=debug
 ExecStart=__WORKSPACE__/autostart_mid360_record/mid360_mapping_record.sh

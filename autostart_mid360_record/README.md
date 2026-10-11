@@ -19,11 +19,13 @@ cd <你的pfa-nav仓库路径>
 ./autostart_mid360_record/mid360_mapping_record.sh
 ```
 
-录包默认输出到：
+录包默认输出到独立于代码工作区的目录：
 
 ```text
-<你的pfa-nav仓库路径>/ros2_bag/mid360_pointcloud/
+/home/pfa/sight/rosbag/mid360_pointcloud/
 ```
+
+也可以通过 `BAG_ROOT` 临时指定其他存储位置。
 
 ## 安装开机自启
 
