@@ -18,7 +18,7 @@ a workflow of using SDF in ROS community with these tools:
 Installation
 
 ```bash
-pip install xmacro
+# xmacro 已内嵌于本工作区 src/xmacro（colcon build 即可），无需 pip 安装
 # cd src of ros workspace
 git clone https://github.com/gezp/sdformat_tools.git
 # cd ros workspace

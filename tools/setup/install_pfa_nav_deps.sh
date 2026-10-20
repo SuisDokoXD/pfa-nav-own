@@ -89,9 +89,10 @@ sudo apt-get install -y \
   ros-humble-ament-cmake-black \
   ros-humble-ament-cmake-clang-format
 
+# NOTE: xmacro is vendored in this workspace as src/xmacro (1.2.1, MIT),
+# so it is built by colcon and needs no pip install.
 python3 -m pip install --user --upgrade \
   vcstool2 \
-  xmacro \
   jinja2 \
   typeguard
 

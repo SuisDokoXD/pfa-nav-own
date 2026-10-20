@@ -50,7 +50,7 @@ vcs import --recursive < dependencies.repos
 ```
 
 ```bash
-pip install xmacro
+# xmacro 已内嵌于本工作区 src/xmacro（colcon build 即可），无需 pip 安装
 ```
 
 ### 2.3 Build

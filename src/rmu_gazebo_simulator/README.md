@@ -56,7 +56,7 @@ docker run -it --rm --name rmu_gazebo_simulator \
 
 ```bash
 sudo pip install vcstool2
-pip install xmacro
+# xmacro 已内嵌于本工作区 src/xmacro（colcon build 即可），无需 pip 安装
 ```
 
 ```bash
