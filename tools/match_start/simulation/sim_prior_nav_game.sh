@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 GAZEBO_WORLD="${GAZEBO_WORLD:-rmuc_2026}"
 NAV_WORLD="${NAV_WORLD:-game}"
 NAMESPACE="${NAMESPACE:-red_standard_robot1}"
+SLAM_MODE="${SLAM_MODE:-False}"
 GAZEBO_STARTUP_SECONDS="${GAZEBO_STARTUP_SECONDS:-8}"
 ROS_LOG_DIR="${ROS_LOG_DIR:-$SCRIPT_DIR/log/ros}"
 
@@ -88,7 +89,7 @@ gazebo_cmd=(
 nav_cmd=(
   ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py
   world:="$NAV_WORLD"
-  slam:=False
+  slam:="$SLAM_MODE"
   namespace:="$NAMESPACE"
   "${nav_args[@]}"
 )
