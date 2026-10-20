@@ -263,10 +263,6 @@ src/pb2025_sentry_nav/pb2025_nav_bringup/config/reality/mid360_user_config.json 
 ros2 run rqt_tf_tree rqt_tf_tree --ros-args -r /tf:=tf -r /tf_static:=tf_static -r __ns:=/red_standard_robot1
 ```
 
-## 代码改动记录
-
-
-
 
 ### TDT 路径逻辑开关
 
