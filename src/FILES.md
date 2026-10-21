@@ -7,7 +7,6 @@
 | 名称 | 类型 | 作用 |
 |---|---|---|
 | `.github` | 目录 | GitHub 配置目录，通常存放 CI 工作流和仓库自动化配置。 |
-| `auto_aim_interfaces` | 目录 | ROS 2 包目录：`auto_aim_interfaces`。 |
 | `joint_state_publisher` | 目录 | 项目子目录。 |
 | `m-explore-ros2` | 目录 | 项目子目录。 |
 | `pb2025_robot_description` | 目录 | ROS 2 包目录：`pb2025_robot_description`。 |
@@ -33,7 +32,7 @@
 | `rmoss_core` / `rmoss_gazebo` / `rmoss_gz_resources` / `rmoss_interfaces` | 仿真支撑依赖 | README 不逐个点名，但 `rmu_gazebo_simulator` 和仿真控制链会用到，不属于未用目录。 |
 | `small_gicp` | 定位依赖 | `small_gicp_relocalization` 依赖它；不要当作未调用的普通目录删。 |
 | `m-explore-ros2` | 当前主 README / 主 launch 未接入 | 自带探索/地图融合 demo，当前导航主流程没有 include 它。 |
-| `auto_aim_interfaces` / `pb_rm_interfaces` | 接口包，当前主 README 未直接调用 | 可能给外部模块或旧流程使用；只是不在 README 主启动链里。 |
+| `pb_rm_interfaces` | 接口包，当前主 README 未直接调用 | 裁判系统/比赛状态等消息定义；不在 README 主启动链里。 |
 | `joint_state_publisher` / `sdformat_tools` | 工具/依赖包 | 不是 README 的人工阅读重点；按构建或仿真报错再查。 |
 
 ## 文件
