@@ -172,4 +172,15 @@ source install/setup.bash
 }
 ```
 
+保存路线时 GUI 会同时写两份文件：`routes/<name>.json`（本文件与 `online_slam_goal.py` 使用）和 `routes/<name>.yaml`（`auto_nav` 系列脚本使用的航点格式）。后者可直接被 `auto_nav_su.py` 读取：
+
+```bash
+python3 auto_nav/auto_nav_su.py --yaml online_slam_goals/simulation/routes/<name>.yaml
+```
+
+注意两点：
+
+- `.yaml` 中的坐标按路线记录的 `frame` 原样写入，而 `auto_nav_su.py` 把航点当作 `map` 帧使用；`frame` 为 `odom` 时需要先与地图对齐。
+- 航点顺序即编号，`Waypoint_1` 就是 `auto_nav_su.py` 的第 1 个点，会影响 `--judge-home-id` / `--judge-remote-id` 以及直线校准的 2↔3、4↔5、5→6 判定。
+
 路线按照 `waypoints` 数组顺序执行。第一个点必须位于启动后能够规划的地图范围内，否则机器人没有移动，地图也无法继续扩展。

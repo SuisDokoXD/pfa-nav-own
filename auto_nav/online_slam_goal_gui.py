@@ -334,6 +334,48 @@ def build_route_payload(name, point_files):
     }
 
 
+def format_number(value):
+    """Compact but precise float text for the waypoint yaml."""
+    text = f"{float(value):.12g}"
+    return "0" if text in ("-0", "-0.0") else text
+
+
+def build_waypoints_yaml(points, source=None):
+    """Render route points as the Waypoints_Num yaml read by the auto_nav scripts."""
+    lines = [
+        "# 由 online_slam_goal_gui.py 自动生成，可直接被 auto_nav 系列脚本用 --yaml 读取",
+    ]
+    if source:
+        lines.append(f"# 来源: {source}")
+    lines.append(
+        "# 坐标按记录时的 frame 原样写入；auto_nav_su.py 按 map 帧使用，跨帧需自行对齐"
+    )
+    lines.append(f"Waypoints_Num: {len(points)}")
+    for index, point in enumerate(points, 1):
+        yaw = float(point.get("yaw", 0.0))
+        lines.extend(
+            [
+                f"Waypoint_{index}:",
+                "  Type: Waypoint",
+                f"  Name: {point.get('name') or index}",
+                f"  Pos_x: {format_number(point['x'])}",
+                f"  Pos_y: {format_number(point['y'])}",
+                "  Pos_z: 0",
+                "  Ori_x: 0",
+                "  Ori_y: 0",
+                f"  Ori_z: {format_number(math.sin(yaw / 2.0))}",
+                f"  Ori_w: {format_number(math.cos(yaw / 2.0))}",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def write_waypoints_yaml(path, points, source=None):
+    """Write the auto_nav waypoint yaml next to the route JSON."""
+    path.write_text(build_waypoints_yaml(points, source), encoding="utf-8")
+    return path
+
+
 class GoalLauncher:
     def __init__(
         self,
@@ -1027,10 +1069,27 @@ class GoalLauncher:
             except OSError as exc:
                 messagebox.showerror("路线保存失败", str(exc), parent=dialog)
                 return
+            yaml_target = target.with_suffix(".yaml")
+            try:
+                write_waypoints_yaml(
+                    yaml_target,
+                    payload["waypoints"],
+                    source=f"routes/{target.name} (frame={payload['frame']})",
+                )
+            except OSError as exc:
+                messagebox.showerror(
+                    "waypoints YAML 保存失败", str(exc), parent=dialog
+                )
+                return
+            frame_hint = (
+                "map 帧，可直接用于 auto_nav"
+                if payload["frame"] == "map"
+                else "odom 帧，需与地图对齐后使用"
+            )
             self.status.config(
                 text=(
-                    f"已保存路线：routes/{target.name}，"
-                    f"共 {len(payload['waypoints'])} 个点。"
+                    f"已保存路线：routes/{target.name} + {yaml_target.name}"
+                    f"（{frame_hint}，共 {len(payload['waypoints'])} 个点）"
                 )
             )
             dialog.destroy()
