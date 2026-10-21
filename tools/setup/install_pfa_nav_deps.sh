@@ -106,7 +106,7 @@ rosdep update
 set +u
 source /opt/ros/humble/setup.bash
 set -u
-rosdep install -r --from-paths src --ignore-src --rosdistro humble -y --skip-keys pb2025_sentry_nav xmacro
+rosdep install -r --from-paths src --ignore-src --rosdistro humble -y --skip-keys pb2025_sentry_nav,xmacro
 
 echo "Dependencies installed. To build:"
 echo "  cd $WORKSPACE"
