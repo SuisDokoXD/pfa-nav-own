@@ -21,9 +21,9 @@ import yaml
 import argparse
 import time
 import math
-from pathlib import Path
+from pathlib import Path as PathLib
 
-DEFAULT_BLUE_WAYPOINTS = str(Path(__file__).resolve().parent / 'config' / 'waypoints_blue.yaml')
+DEFAULT_BLUE_WAYPOINTS = str(PathLib(__file__).resolve().parent / 'config' / 'waypoints_blue.yaml')
 
 ROS_LOG_DEBUG = Log.DEBUG[0]
 ROS_LOG_INFO = Log.INFO[0]
