@@ -28,6 +28,13 @@
   <exec_depend>small_gicp_relocalization</exec_depend>
   <exec_depend>pointcloud_to_laserscan</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>fake_vel_transform</exec_depend>
+  <exec_depend>loam_interface</exec_depend>
+  <exec_depend>sensor_scan_generation</exec_depend>
+  <exec_depend>ign_sim_pointcloud_tool</exec_depend>
+  <exec_depend>pb2025_robot_description</exec_depend>
+  <exec_depend>joy</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
