@@ -51,5 +51,66 @@
       <pose>0.0 0.0 0 0 0 0</pose>
       <static>true</static>
     </model>
+
+    <!-- 围墙：防止机器人掉出场地，同时挡住激光雷达扫到场外（与 2026 场地一致）。
+         规格参照 rmuc_2026：0.5m 厚、18m 高，内壁贴着 28x16 场地边界（x=±14, y=±8）。
+         只围四周、不加顶盖，和 2026 一样。 -->
+    <model name='rmuc_2027_walls'>
+      <static>true</static>
+      <link name='walls'>
+        <collision name='wall_north'>
+          <pose>0 8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_north_visual'>
+          <pose>0 8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+        <collision name='wall_south'>
+          <pose>0 -8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_south_visual'>
+          <pose>0 -8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+        <collision name='wall_east'>
+          <pose>14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_east_visual'>
+          <pose>14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+        <collision name='wall_west'>
+          <pose>-14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_west_visual'>
+          <pose>-14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
   </world>
 </sdf>
