@@ -77,6 +77,23 @@ robots:
     #   z_pose: "0.28"
     #   yaw: "3.14"
 
+  rmuc_2027:
+    # 场地以中心为原点: 28m x 16m, x∈[-14,14], y∈[-8,8], 地板 z=0
+    # 出生点为占位值，确认 2027 起始区后按需要改
+    - name: "red_standard_robot1"
+      color: "red"
+      x_pose: "0.0"
+      y_pose: "-6.5"
+      z_pose: "0.28"
+      yaw: "0.0"
+
+    # - name: "blue_standard_robot1"
+    #   color: "blue"
+    #   x_pose: "0.0"
+    #   y_pose: "6.5"
+    #   z_pose: "0.28"
+    #   yaw: "3.14"
+
   rmul_2026:
     - name: "red_standard_robot1"
       color: "red"
