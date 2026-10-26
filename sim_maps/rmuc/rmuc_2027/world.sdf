@@ -1,0 +1,116 @@
+<?xml version='1.0' encoding='utf-8'?>
+<sdf version='1.7'>
+  <world name='default'>
+    <!-- Physics settings: 降低更新频率以减少CPU占用 -->
+    <physics name="default_physics" type="ode">
+      <max_step_size>0.01</max_step_size>
+      <real_time_update_rate>100</real_time_update_rate>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Physics -->
+    <plugin filename="libignition-gazebo-physics-system.so" name="ignition::gazebo::systems::Physics">
+    </plugin>
+
+    <!-- Forwards simulation state to the GUI -->
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so" name="ignition::gazebo::systems::SceneBroadcaster">
+    </plugin>
+
+    <!-- Processes user commands, like translate and create -->
+    <plugin filename="libignition-gazebo-user-commands-system.so" name="ignition::gazebo::systems::UserCommands">
+    </plugin>
+
+    <!-- Generates rendering sensor data -->
+    <plugin filename="libignition-gazebo-sensors-system.so" name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <plugin filename="libignition-gazebo-imu-system.so" name="ignition::gazebo::systems::Imu">
+    </plugin>
+
+    <light type='directional' name='direct_light'>
+      <visualize>false</visualize>
+      <cast_shadows>true</cast_shadows>
+      <!-- 2027 场地以场地中心为原点 (28m x 16m)，光源置于场地正上方 -->
+      <pose>0 0 20 0 0 0</pose>
+      <diffuse>1.0 1.0 1.0 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>0 0 -1</direction>
+    </light>
+
+    <model name='rmuc_2027'>
+      <include>
+        <uri>model://rmuc_2027</uri>
+      </include>
+      <pose>0.0 0.0 0 0 0 0</pose>
+      <static>true</static>
+    </model>
+
+    <!-- 围墙：防止机器人掉出场地，同时挡住激光雷达扫到场外（与 2026 场地一致）。
+         规格参照 rmuc_2026：0.5m 厚、18m 高，内壁贴着 28x16 场地边界（x=±14, y=±8）。
+         只围四周、不加顶盖，和 2026 一样。 -->
+    <model name='rmuc_2027_walls'>
+      <static>true</static>
+      <link name='walls'>
+        <collision name='wall_north'>
+          <pose>0 8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_north_visual'>
+          <pose>0 8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+        <collision name='wall_south'>
+          <pose>0 -8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_south_visual'>
+          <pose>0 -8.25 9 0 0 0</pose>
+          <geometry><box><size>29.0 0.5 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+        <collision name='wall_east'>
+          <pose>14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_east_visual'>
+          <pose>14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+        <collision name='wall_west'>
+          <pose>-14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+        </collision>
+        <visual name='wall_west_visual'>
+          <pose>-14.25 0 9 0 0 0</pose>
+          <geometry><box><size>0.5 16.0 18.0</size></box></geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.3 0.3 0.3 1</diffuse>
+            <specular>0.01 0.01 0.01 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>
