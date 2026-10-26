@@ -120,3 +120,12 @@ robots:
     #   y_pose: "-3.5"
     #   z_pose: "0.28"
     #   yaw: "3.14"
+
+  # 只含图纸上半段（y ∈ [0.20, 3.75]），tools/sim/drawing_to_upper_segment.py 生成
+  upper_segment:
+    - name: "red_standard_robot1"
+      color: "red"
+      x_pose: "5.55"
+      y_pose: "1.89"
+      z_pose: "0.10"
+      yaw: "3.1415926"
