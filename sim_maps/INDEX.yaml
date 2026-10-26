@@ -27,18 +27,6 @@ entries:
     y_pose: '0.0'
     z_pose: '0.28'
     yaw: '0.0'
-- name: empty
-  cat: custom
-  dir: custom/empty
-  world: src/rmu_gazebo_simulator/rmu_gazebo_simulator/resource/worlds/empty_world.sdf
-  map_pgm: null
-  map_yaml: null
-  has_map: false
-  has_params: false
-  has_model: false
-  dims: null
-  map_meta: null
-  spawn: {}
 - name: rmuc_2024
   cat: rmuc
   dir: rmuc/rmuc_2024

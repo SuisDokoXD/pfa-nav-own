@@ -11,6 +11,8 @@ MODELS = ROOT / "src/rmu_gazebo_simulator/rmu_gazebo_simulator/resource/models"
 MAPS = ROOT / "src/pb2025_sentry_nav/pb2025_nav_bringup/map/simulation"
 PARAMS = ROOT / "src/pb2025_sentry_nav/pb2025_nav_bringup/config/simulation"
 GZWORLD = ROOT / "src/rmu_gazebo_simulator/rmu_gazebo_simulator/config/gz_world.yaml"
+# 不进汇总的场地：empty 只是空场模板（无地图、无出生点），留着只会让人误选
+SKIP = {"empty"}
 OUT = ROOT / "sim_maps"
 
 import yaml
@@ -52,6 +54,9 @@ def main():
     entries = []
     for wf in sorted(WORLDS.glob("*_world.sdf")):
         name = wf.name[: -len("_world.sdf")]
+        if name in SKIP:
+            print(f"[skip] {name}（在 SKIP 里，不进汇总）")
+            continue
         if name.startswith("rmuc"):
             cat = "rmuc"
         elif name.startswith("rmul"):
