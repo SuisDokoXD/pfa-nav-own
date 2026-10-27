@@ -93,6 +93,7 @@ ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py slam:=True use_ro
 
 2.实车建图后对建图生成文件的处理
 [实车建图完成之后，保存的点云和栅格地图需要进行选择，更名和移动后才能供给有图先验导航使用，否则会无法导航]
+[具体命令见下文「实车地图归位」章节：先 map_saver_cli 存栅格，再结束建图让 point_lio 写出 scans.pcd，最后跑 tools/map/prepare_reality_map.sh]
 
 
 3.一键启动实车建图以及目标点管理工具
