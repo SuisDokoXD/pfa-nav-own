@@ -4,6 +4,11 @@ set -Eeuo pipefail
 # One-key Gazebo + simulation SLAM helper.
 # Start Gazebo and simulation SLAM, then press Ctrl+C after mapping. The script saves the
 # final grid map and installs the newest PCD into simulation prior-navigation paths.
+#
+# Defaults: Gazebo world = rmuc_2027 (WORLD), installed map name = game (INSTALL_NAME),
+# so sim_prior_nav_game.sh can pick it up with its default world:=game.
+# The positional arg only sets the Gazebo world; use INSTALL_NAME=<name> to install
+# the result under another venue name.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BRINGUP_DIR="$SCRIPT_DIR/src/pb2025_sentry_nav/pb2025_nav_bringup"
@@ -13,7 +18,7 @@ SIM_PCD_DIR="$BRINGUP_DIR/pcd/simulation"
 
 NAMESPACE="${NAMESPACE:-red_standard_robot1}"
 WORLD="${WORLD:-rmuc_2027}"
-INSTALL_NAME="${INSTALL_NAME:-rmuc_2027}"
+INSTALL_NAME="${INSTALL_NAME:-game}"
 MAP_NAME="${MAP_NAME:-}"
 SAVE_TIMEOUT="${SAVE_TIMEOUT:-20s}"
 ROS_LOG_DIR="${ROS_LOG_DIR:-$SCRIPT_DIR/log/ros}"

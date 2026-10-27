@@ -2,13 +2,17 @@
 set -Eeuo pipefail
 
 # One-key Gazebo + simulation prior-navigation helper.
-# Starts a Gazebo competition world, then starts pb2025 simulation navigation
-# using the installed prior map, defaulting to world:=game.
+# Starts the RMUC 2027 Gazebo world by default (GAZEBO_WORLD), then starts pb2025
+# simulation navigation against the installed prior map, which defaults to
+# world:=game (map/simulation/game.yaml + pcd/simulation/scans.pcd) because
+# sim_slam_install_map.sh installs its Ctrl+C output as game.*.
+#
+# Positional arg = Gazebo world only; nav map is NAV_WORLD=<name>.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 GAZEBO_WORLD="${GAZEBO_WORLD:-rmuc_2027}"
-NAV_WORLD="${NAV_WORLD:-rmuc_2027}"
+NAV_WORLD="${NAV_WORLD:-game}"
 NAMESPACE="${NAMESPACE:-red_standard_robot1}"
 SLAM_MODE="${SLAM_MODE:-False}"
 GAZEBO_STARTUP_SECONDS="${GAZEBO_STARTUP_SECONDS:-8}"
