@@ -135,7 +135,7 @@ def main():
          "`pfa-nav-own` 里所有可跑的 Gazebo 仿真场地都汇总在这里，按赛制分类。",
          "**原位置的文件没有移动**，这里全部是副本，方便一眼看清有哪些图、怎么切。", "",
          f"当前默认场地：`{gz.get('world')}`", "",
-         "## 一览", "",
+         "> 纯名字清单见 `sim_maps/MAPS.txt`（分组 + 可直接复制的名字）。", "", "## 一览", "",
          "| 场地 | 分类 | 地图 | 分辨率 | 地图范围 | 出生点 | 参数 |",
          "|---|---|---|---|---|---|---|"]
     for e in entries:
@@ -170,6 +170,39 @@ def main():
           ""]
     (OUT / "README.md").write_text("\n".join(R), encoding="utf-8")
 
+    # MAPS.txt：地图名字清单（人读 + 可直接复制的纯名字）
+    L = []
+    L.append("# 仿真地图清单（sim_maps）")
+    L.append("#")
+    L.append("# 用法：ros2 launch rmu_gazebo_simulator bringup_sim.launch.py world:=<下面的名字>")
+    L.append("#      导航再开一个终端：ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py world:=<同一个名字>")
+    L.append("#")
+    L.append(f"# 默认场地：{gz.get('world')}")
+    L.append("# 标记：* = 有地图（可 slam:=False 直接导航）   - = 无地图（要 slam:=True）   [专用] = 要额外带 params_file")
+    L.append("")
+    buckets = {"rmuc": [], "rmul": [], "custom": []}
+    for e in entries:
+        buckets.setdefault(e["cat"], []).append(e)
+    for cat in ("rmuc", "rmul", "custom"):
+        group = buckets.get(cat) or []
+        if not group:
+            continue
+        L.append(f"[{cat}]")
+        for e in group:
+            mark = "*" if e["has_map"] else "-"
+            extra = ""
+            if e["name"] == gz.get("world"):
+                extra += "  (默认)"
+            if e["has_params"]:
+                extra += "  [专用]"
+            L.append(f"{e['name']:<18}{mark}{extra}")
+        L.append("")
+    L.append("")
+    L.append("# ---- 纯名字（一行一个，可直接复制到 world:= 后面）----")
+    for e in entries:
+        L.append(e["name"])
+    L.append("")
+    (OUT / "MAPS.txt").write_text("\n".join(L), encoding="utf-8")
     print(f"[done] {OUT}")
     for e in entries:
         print(f"  {e['cat']:7s} {e['name']:16s} map={'Y' if e['has_map'] else 'N'} "
