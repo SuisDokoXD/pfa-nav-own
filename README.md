@@ -40,29 +40,40 @@ ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py slam:=True
 ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py world:=rmuc_2025 slam:=False
 ```
 
-(3)一键仿真建图并覆盖仿真先验导航的 `game` 地图
-[仿真导航传参的地图和点云不见了使用，创建新的点云和栅格，然后自动导入]
+(3)一键仿真建图并安装为该场地的地图
+[地图/点云丢了，或想要一张新图时用：建新图 → 存成同名 → 自动装回去]
 
 ```bash
-./tools/match_start/simulation/sim_slam_install_map.sh rmuc_2026
+./tools/match_start/simulation/sim_slam_install_map.sh <场地名>
 ```
 
 脚本运行逻辑：
-先用 `rmuc_2026`开Gazebo，再开仿真SLAM，自己点点跑完需要建图的区域后按 `Ctrl+C`关闭它，关闭后，slam会保存 `.pgm/.yaml`，point_lio会保存`.pcd`，然后统一改名并覆盖安装到以下目录：
+先用 `<场地名>` 开 Gazebo，再开仿真 SLAM，自己跑完需要建图的区域后按 `Ctrl+C`，
+slam 会存 `.pgm/.yaml`，point_lio 会存 `.pcd`，然后**以场地名命名**装到：
 
 ```text
-src/pb2025_sentry_nav/pb2025_nav_bringup/map/simulation/game.yaml
-src/pb2025_sentry_nav/pb2025_nav_bringup/map/simulation/game.pgm
-src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/simulation/scans.pcd
-src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/simulation/game.pcd
+src/pb2025_sentry_nav/pb2025_nav_bringup/map/simulation/<场地名>.yaml
+src/pb2025_sentry_nav/pb2025_nav_bringup/map/simulation/<场地名>.pgm
+src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/simulation/scans.pcd          # 兼容默认入口
+src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/simulation/<场地名>.pcd       # 按场地名
 ```
+
+例：`./tools/match_start/simulation/sim_slam_install_map.sh rmuc_2026`
+→ 装成 `rmuc_2026.pgm/.yaml` + `rmuc_2026.pcd`（**不再改名成 `game`**）。
+想强制安装成别的名字：`INSTALL_NAME=xxx ./tools/match_start/simulation/sim_slam_install_map.sh rmuc_2026`
+想只看参数不启动：`DRY_RUN=1 ./tools/match_start/simulation/sim_slam_install_map.sh rmuc_2026`
+
 (4)一键启动仿真全套指令
 Gazebo + 仿真先验导航模式：
-[导航默认读取 `world:=game`，即刚才覆盖安装的 `game.yaml` 和 `pcd/simulation/scans.pcd`。]
+[导航读 `world:=<场地名>`，即 `map/simulation/<场地名>.yaml`；
+ 点云优先用 `pcd/simulation/<场地名>.pcd`，没有才回退 `scans.pcd`。]
 
 ```bash
-./tools/match_start/simulation/sim_prior_nav_game.sh rmuc_2026
+./tools/match_start/simulation/sim_prior_nav_game.sh <场地名>
 ```
+
+例：`./tools/match_start/simulation/sim_prior_nav_game.sh rmuc_2026`
+（脚本名里的 `game` 是历史遗留，现在 Gazebo 场地和导航地图都跟随你传的名字）
 
 (5)在仿真下手动键盘控制车移动
 

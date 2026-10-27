@@ -160,7 +160,7 @@ def main():
           "底层其实就是两个 launch：", "",
           "```bash",
           "ros2 launch rmu_gazebo_simulator bringup_sim.launch.py world:=<名字>",
-          "ros2 launch pb2025_sentry_nav rm_navigation_simulation_launch.py world:=<名字> use_rviz:=True \\",
+          "ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py world:=<名字> use_rviz:=True \\",
           "    params_file:=<按 INDEX.yaml 决定的参数文件>",
           "```", "",
           "## 注意", "",

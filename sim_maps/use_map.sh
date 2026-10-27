@@ -65,7 +65,7 @@ KNOWN=$(field "$CASE" name)
 [ -n "$KNOWN" ] || { list_all; echo; die "没有叫 '$CASE' 的场地"; }
 
 HAS_PARAMS=$(field "$CASE" has_params)
-NAVCMD="ros2 launch pb2025_sentry_nav rm_navigation_simulation_launch.py \\
+NAVCMD="ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \\
     world:=$CASE use_rviz:=True"
 if [ "$HAS_PARAMS" = "True" ]; then
   NAVCMD="$NAVCMD \\
