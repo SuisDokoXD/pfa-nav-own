@@ -42,13 +42,18 @@ ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py world:=rmuc_20
 
 (3)一键仿真建图并覆盖仿真先验导航的 `game` 地图
 [仿真导航传参的地图和点云不见了使用，创建新的点云和栅格，然后自动导入]
+[默认 Gazebo 起 `rmuc_2027`，建完装成 `game.*`；位置参数只决定 Gazebo 场地，安装名由 `INSTALL_NAME` 决定，给别的场地存档要显式传 `INSTALL_NAME=<场地名>`]
 
 ```bash
-./tools/match_start/simulation/sim_slam_install_map.sh rmuc_2026
+# 默认：Gazebo 起 rmuc_2027，结果装成 game.yaml/game.pgm/game.pcd
+./tools/match_start/simulation/sim_slam_install_map.sh
+
+# 想按场地名存档（不覆盖 game）：
+INSTALL_NAME=rmuc_2027 ./tools/match_start/simulation/sim_slam_install_map.sh rmuc_2027
 ```
 
 脚本运行逻辑：
-先用 `rmuc_2026`开Gazebo，再开仿真SLAM，自己点点跑完需要建图的区域后按 `Ctrl+C`关闭它，关闭后，slam会保存 `.pgm/.yaml`，point_lio会保存`.pcd`，然后统一改名并覆盖安装到以下目录：
+先用 `rmuc_2027`（或你传的第一个位置参数）开Gazebo，再开仿真SLAM，自己点点跑完需要建图的区域后按 `Ctrl+C`关闭它，关闭后，slam会保存 `.pgm/.yaml`，point_lio会保存`.pcd`，然后统一改名并覆盖安装到以下目录（`game` 就是 `INSTALL_NAME` 的默认值）：
 
 ```text
 src/pb2025_sentry_nav/pb2025_nav_bringup/map/simulation/game.yaml
@@ -58,10 +63,11 @@ src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/simulation/game.pcd
 ```
 (4)一键启动仿真全套指令
 Gazebo + 仿真先验导航模式：
-[导航默认读取 `world:=game`，即刚才覆盖安装的 `game.yaml` 和 `pcd/simulation/scans.pcd`。]
+[Gazebo 默认起 `rmuc_2027`，导航默认读取 `world:=game`，即刚才覆盖安装的 `game.yaml` 和 `pcd/simulation/scans.pcd`；要换导航地图用 `NAV_WORLD=<场地名>`。]
 
 ```bash
-./tools/match_start/simulation/sim_prior_nav_game.sh rmuc_2026
+# 等价于 ./tools/match_start/simulation/sim_prior_nav_game.sh rmuc_2027
+./tools/match_start/simulation/sim_prior_nav_game.sh
 ```
 
 (5)在仿真下手动键盘控制车移动
