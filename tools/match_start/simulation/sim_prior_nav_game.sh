@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 GAZEBO_WORLD="${GAZEBO_WORLD:-rmuc_2027}"
-NAV_WORLD="${NAV_WORLD:-}"
+NAV_WORLD="${NAV_WORLD:-rmuc_2027}"
 NAMESPACE="${NAMESPACE:-red_standard_robot1}"
 SLAM_MODE="${SLAM_MODE:-False}"
 GAZEBO_STARTUP_SECONDS="${GAZEBO_STARTUP_SECONDS:-8}"
@@ -17,26 +17,6 @@ ROS_LOG_DIR="${ROS_LOG_DIR:-$SCRIPT_DIR/log/ros}"
 if [[ $# -gt 0 && "$1" != *":="* ]]; then
   GAZEBO_WORLD="$1"
   shift
-fi
-
-# 没显式给 NAV_WORLD 时，跟随 Gazebo 场地名（传什么就用什么地图导航）
-NAV_WORLD="${NAV_WORLD:-$GAZEBO_WORLD}"
-
-SIM_PCD_DIR="$SCRIPT_DIR/src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/simulation"
-SIM_MAP_DIR="$SCRIPT_DIR/src/pb2025_sentry_nav/pb2025_nav_bringup/map/simulation"
-echo "[sim_prior_nav] Gazebo 场地=$GAZEBO_WORLD  导航地图=$NAV_WORLD"
-echo "[sim_prior_nav] 地图 -> $SIM_MAP_DIR/$NAV_WORLD.yaml"
-if [[ ! -f "$SIM_MAP_DIR/$NAV_WORLD.yaml" ]]; then
-  echo "[sim_prior_nav] 警告：地图不存在，先跑 sim_slam_install_map.sh $NAV_WORLD 建图"
-fi
-if [[ ! -f "$SIM_PCD_DIR/$NAV_WORLD.pcd" ]]; then
-  echo "[sim_prior_nav] 警告：$SIM_PCD_DIR/$NAV_WORLD.pcd 不存在"
-  echo "[sim_prior_nav]       将回退到 scans.pcd；若它属于别的场地，定位会漂"
-  echo "[sim_prior_nav]       先跑一次：./tools/match_start/simulation/sim_slam_install_map.sh $NAV_WORLD"
-fi
-if [[ "${DRY_RUN:-0}" == "1" ]]; then
-  echo "[sim_prior_nav] DRY_RUN=1，只解析参数不启动"
-  exit 0
 fi
 
 nav_args=("$@")
@@ -106,17 +86,11 @@ gazebo_cmd=(
   world:="$GAZEBO_WORLD"
 )
 
-# 优先用与地图同名的点云；没有就回退到默认 scans.pcd
-PRIOR_PCD="$SIM_PCD_DIR/$NAV_WORLD.pcd"
-pcd_args=()
-[[ -f "$PRIOR_PCD" ]] && pcd_args+=("prior_pcd_file:=$PRIOR_PCD")
-
 nav_cmd=(
   ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py
   world:="$NAV_WORLD"
   slam:="$SLAM_MODE"
   namespace:="$NAMESPACE"
-  "${pcd_args[@]}"
   "${nav_args[@]}"
 )
 

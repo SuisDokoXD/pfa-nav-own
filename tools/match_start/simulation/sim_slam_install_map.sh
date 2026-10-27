@@ -13,7 +13,7 @@ SIM_PCD_DIR="$BRINGUP_DIR/pcd/simulation"
 
 NAMESPACE="${NAMESPACE:-red_standard_robot1}"
 WORLD="${WORLD:-rmuc_2027}"
-INSTALL_NAME="${INSTALL_NAME:-}"
+INSTALL_NAME="${INSTALL_NAME:-rmuc_2027}"
 MAP_NAME="${MAP_NAME:-}"
 SAVE_TIMEOUT="${SAVE_TIMEOUT:-20s}"
 ROS_LOG_DIR="${ROS_LOG_DIR:-$SCRIPT_DIR/log/ros}"
@@ -26,20 +26,8 @@ if [[ $# -gt 0 && "$1" != *":="* ]]; then
   shift
 fi
 
-# 没显式给 INSTALL_NAME 时，跟随传进来的场地名（传什么就建/存成什么）
-INSTALL_NAME="${INSTALL_NAME:-$WORLD}"
-
 if [[ -z "$MAP_NAME" ]]; then
   MAP_NAME="$INSTALL_NAME"
-fi
-
-PRIOR_PCD="$SIM_PCD_DIR/$INSTALL_NAME.pcd"
-echo "[sim_slam_install] 场地 WORLD=$WORLD  存图名 INSTALL_NAME=$INSTALL_NAME"
-echo "[sim_slam_install] 地图 -> $SIM_MAP_DIR/$INSTALL_NAME.pgm/.yaml"
-echo "[sim_slam_install] 点云 -> $SIM_PCD_DIR/scans.pcd 与 $PRIOR_PCD"
-if [[ "${DRY_RUN:-0}" == "1" ]]; then
-  echo "[sim_slam_install] DRY_RUN=1，只解析参数不启动"
-  exit 0
 fi
 
 MAP_BASE="$WORK_DIR/$MAP_NAME"
@@ -189,10 +177,7 @@ cleanup() {
 Done.
 
 Simulation prior navigation can now be started with:
-  nav_extra=()
-  [[ -f "$PRIOR_PCD" ]] && nav_extra+=("prior_pcd_file:=$PRIOR_PCD")
-  ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
-    world:=$INSTALL_NAME slam:=False "${nav_extra[@]}"
+  ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py world:=$INSTALL_NAME slam:=False
 
 Installed:
   $SIM_MAP_DIR/$INSTALL_NAME.yaml
