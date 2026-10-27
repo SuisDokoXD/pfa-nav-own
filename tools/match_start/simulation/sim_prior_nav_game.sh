@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 GAZEBO_WORLD="${GAZEBO_WORLD:-rmuc_2027}"
-NAV_WORLD="${NAV_WORLD:-rmuc_2027}"
+NAV_WORLD="${NAV_WORLD:-game}"
 NAMESPACE="${NAMESPACE:-red_standard_robot1}"
 SLAM_MODE="${SLAM_MODE:-False}"
 GAZEBO_STARTUP_SECONDS="${GAZEBO_STARTUP_SECONDS:-8}"
