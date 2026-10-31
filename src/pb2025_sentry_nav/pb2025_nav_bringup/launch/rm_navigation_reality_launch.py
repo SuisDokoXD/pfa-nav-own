@@ -15,11 +15,15 @@
 
 import os
 
+import yaml
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    LogInfo,
+    OpaqueFunction,
     SetEnvironmentVariable,
 )
 from launch.conditions import IfCondition
@@ -50,6 +54,47 @@ def _src_bringup_dir(bringup_dir):
     return os.path.join(
         workspace_root, "src", "pb2025_sentry_nav", "pb2025_nav_bringup"
     )
+
+
+def _check_navigation_inputs(context):
+    """Reject incomplete prior maps before starting the LiDAR or Nav2."""
+    if not IfCondition(LaunchConfiguration("slam")).evaluate(context):
+        map_path = LaunchConfiguration("map").perform(context)
+        pcd_path = LaunchConfiguration("prior_pcd_file").perform(context)
+        problems = []
+        for label, path in (("map YAML", map_path), ("prior PCD", pcd_path)):
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                problems.append(f"Missing or empty {label}: {path}")
+
+        if os.path.isfile(map_path) and os.path.getsize(map_path) > 0:
+            try:
+                with open(map_path, encoding="utf-8") as stream:
+                    metadata = yaml.safe_load(stream)
+                image = metadata.get("image") if isinstance(metadata, dict) else None
+                if not isinstance(image, str) or not image.strip():
+                    raise ValueError("map YAML requires a non-empty image field")
+                image_path = os.path.join(os.path.dirname(map_path), image)
+                if not os.path.isfile(image_path) or os.path.getsize(image_path) == 0:
+                    problems.append(f"Missing or empty map image: {image_path}")
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                problems.append(f"Invalid map YAML {map_path}: {exc}")
+
+        if problems:
+            raise RuntimeError(
+                "Real-robot prior navigation requires a matching YAML/image/PCD set.\n"
+                + "\n".join(problems)
+                + "\nAfter SLAM has stopped and saved scans.pcd, run from the workspace: "
+                "bash tools/map/prepare_reality_map.sh <world> --copy "
+                "(add --force only to replace an existing map)."
+            )
+
+    if not IfCondition(LaunchConfiguration("use_robot_state_pub")).evaluate(context):
+        return [LogInfo(msg=(
+            "use_robot_state_pub=False: an external robot state publisher must provide "
+            "base_footprint/front_mid360/gimbal_yaw TF in this namespace. "
+            "For standalone navigation, pass use_robot_state_pub:=True."
+        ))]
+    return []
 
 
 def generate_launch_description():
@@ -156,7 +201,10 @@ def generate_launch_description():
     declare_use_robot_state_pub_cmd = DeclareLaunchArgument(
         "use_robot_state_pub",
         default_value="False",
-        description="Whether to start the robot state publisher",
+        description=(
+            "Start robot TF for standalone navigation. If False, an external robot "
+            "state publisher must already provide base_footprint/front_mid360/gimbal_yaw."
+        ),
     )
 
     declare_use_livox_driver_cmd = DeclareLaunchArgument(
@@ -319,6 +367,7 @@ def generate_launch_description():
     ld.add_action(declare_auto_save_pcd_interval_cmd)
 
     # Add the actions to launch all of the navigation nodes
+    ld.add_action(OpaqueFunction(function=_check_navigation_inputs))
     ld.add_action(start_robot_state_publisher_cmd)
     ld.add_action(start_livox_ros_driver2_node)
     ld.add_action(bringup_cmd)

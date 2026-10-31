@@ -240,13 +240,18 @@ else
     echo "[实车在线导航] 未指定自动目标或路线，请在弹出的窗口中选择或录入。"
 fi
 
-setsid ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
-    slam:=True \
-    namespace:="$NAMESPACE" \
-    use_sim_time:=False \
-    use_robot_state_pub:="$USE_ROBOT_STATE_PUB" \
-    use_rviz:="$USE_RVIZ" \
-    rviz_fixed_frame:=odom &
+launch_args=(
+    slam:=True
+    use_sim_time:=False
+    use_robot_state_pub:="$USE_ROBOT_STATE_PUB"
+    use_rviz:="$USE_RVIZ"
+    rviz_fixed_frame:=odom
+)
+# ROS 2 launch rejects namespace:= with an empty value. Its default is already empty.
+if [[ -n "$NAMESPACE" ]]; then
+    launch_args+=("namespace:=$NAMESPACE")
+fi
+setsid ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py "${launch_args[@]}" &
 NAV_PID=$!
 
 tool_command=(

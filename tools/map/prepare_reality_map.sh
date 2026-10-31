@@ -207,6 +207,21 @@ DEST_YAML="$REALITY_MAP_DIR/$WORLD.yaml"
 DEST_PGM="$REALITY_MAP_DIR/$WORLD.pgm"
 DEST_PCD="$REALITY_PCD_DIR/$WORLD.pcd"
 
+# Check the complete set before moving or overwriting any member. In particular,
+# do not replace a valid grid map and only then discover a missing scans.pcd.
+SOURCES=("$MAP_YAML" "$MAP_PGM" "$PCD_SOURCE")
+TARGETS=("$DEST_YAML" "$DEST_PGM" "$DEST_PCD")
+command -v python3 >/dev/null 2>&1 || die "python3 is required to update the YAML image field"
+for i in "${!SOURCES[@]}"; do
+    [[ -s "${SOURCES[$i]}" && -f "${SOURCES[$i]}" ]] || die "source file missing or empty: ${SOURCES[$i]}"
+    if [[ "$(real_path "${SOURCES[$i]}")" != "$(real_path "${TARGETS[$i]}")" ]]; then
+        [[ ! -d "${TARGETS[$i]}" ]] || die "target is a directory: ${TARGETS[$i]}"
+        if [[ -e "${TARGETS[$i]}" && "$FORCE" != true ]]; then
+            die "target already exists: ${TARGETS[$i]} (use --force to overwrite)"
+        fi
+    fi
+done
+
 place_file "$MAP_YAML" "$DEST_YAML"
 place_file "$MAP_PGM" "$DEST_PGM"
 place_file "$PCD_SOURCE" "$DEST_PCD"

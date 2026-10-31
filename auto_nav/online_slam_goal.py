@@ -9,6 +9,8 @@ machine. The goal can be expressed in the SLAM ``map`` frame or in ``odom``.
 import argparse
 import json
 import math
+import signal
+import time
 import uuid
 from pathlib import Path
 
@@ -22,50 +24,102 @@ from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.time import Time
+from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformException, TransformListener
 
 
-ROUTE_FORMAT = "pfa_online_slam_route/v1"
+ROUTE_FORMAT = "pfa_online_slam_route/v2"
+ROUTE_FORMAT_V1 = "pfa_online_slam_route/v1"
+MAX_WAIT_SECONDS = 86400.0
+STEP_WAYPOINT = "waypoint"
+STEP_WAIT = "wait"
 
 
 def quaternion_from_yaw(yaw):
     return 0.0, 0.0, math.sin(yaw * 0.5), math.cos(yaw * 0.5)
 
 
+def _normalize_waypoint(raw, index):
+    if not isinstance(raw, dict) or not all(key in raw for key in ("x", "y")):
+        raise ValueError(f"路线第 {index} 项必须是包含 x 和 y 的导航点")
+    try:
+        x = float(raw["x"])
+        y = float(raw["y"])
+        yaw = float(raw.get("yaw", 0.0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"路线第 {index} 项坐标不是有效数字") from exc
+    if not all(math.isfinite(value) for value in (x, y, yaw)):
+        raise ValueError(f"路线第 {index} 项坐标必须是有限数字")
+    return {
+        "type": STEP_WAYPOINT,
+        "name": str(raw.get("name") or f"waypoint_{index}"),
+        "x": x,
+        "y": y,
+        "yaw": yaw,
+    }
+
+
+def _normalize_wait(raw, index):
+    seconds = raw.get("seconds")
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+        raise ValueError(f"路线第 {index} 项等待时间必须是数字")
+    seconds = float(seconds)
+    if not math.isfinite(seconds) or not 0.0 < seconds <= MAX_WAIT_SECONDS:
+        raise ValueError(
+            f"路线第 {index} 项等待时间须大于 0 且不超过 {MAX_WAIT_SECONDS:g} 秒"
+        )
+    auto_aim = raw.get("auto_aim", False)
+    if not isinstance(auto_aim, bool):
+        raise ValueError(f"路线第 {index} 项 auto_aim 必须是布尔值")
+    return {
+        "type": STEP_WAIT,
+        "name": str(raw.get("name") or f"等待 {seconds:g} 秒"),
+        "seconds": seconds,
+        "auto_aim": auto_aim,
+    }
+
+
 def parse_route_data(data):
-    """Validate and normalize the portable online-SLAM route format."""
-    if not isinstance(data, dict) or data.get("format") != ROUTE_FORMAT:
-        raise ValueError(f"路线 format 必须是 {ROUTE_FORMAT}")
+    """Validate a route document and normalize it into an ordered step list.
+
+    v1 documents (waypoints only) stay readable and are lifted into waypoint
+    steps so older saved routes keep working unchanged.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("路线文件必须是 JSON 对象")
     frame = data.get("frame")
     if frame not in ("map", "odom"):
         raise ValueError("路线 frame 必须是 map 或 odom")
-    raw_waypoints = data.get("waypoints")
-    if not isinstance(raw_waypoints, list) or not raw_waypoints:
-        raise ValueError("路线 waypoints 必须是非空数组")
-
-    waypoints = []
-    for index, waypoint in enumerate(raw_waypoints, start=1):
-        if not isinstance(waypoint, dict) or not all(
-            key in waypoint for key in ("x", "y")
-        ):
-            raise ValueError(f"路线第 {index} 个点必须包含 x 和 y")
-        try:
-            x = float(waypoint["x"])
-            y = float(waypoint["y"])
-            yaw = float(waypoint.get("yaw", 0.0))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"路线第 {index} 个点坐标不是有效数字") from exc
-        if not all(math.isfinite(value) for value in (x, y, yaw)):
-            raise ValueError(f"路线第 {index} 个点坐标必须是有限数字")
-        waypoints.append(
-            {
-                "name": str(waypoint.get("name") or f"waypoint_{index}"),
-                "x": x,
-                "y": y,
-                "yaw": yaw,
-            }
-        )
-    return frame, waypoints
+    fmt = data.get("format")
+    if fmt == ROUTE_FORMAT_V1 or (
+        fmt is None and "steps" not in data and "waypoints" in data
+    ):
+        raw_waypoints = data.get("waypoints")
+        if not isinstance(raw_waypoints, list) or not raw_waypoints:
+            raise ValueError("路线 waypoints 必须是非空数组")
+        return frame, [
+            _normalize_waypoint(raw, index)
+            for index, raw in enumerate(raw_waypoints, start=1)
+        ]
+    if fmt != ROUTE_FORMAT:
+        raise ValueError(f"路线 format 必须是 {ROUTE_FORMAT} 或 {ROUTE_FORMAT_V1}")
+    raw_steps = data.get("steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise ValueError("路线 steps 必须是非空数组")
+    steps = []
+    for index, raw in enumerate(raw_steps, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"路线第 {index} 项格式错误")
+        kind = raw.get("type")
+        if kind == STEP_WAYPOINT:
+            steps.append(_normalize_waypoint(raw, index))
+        elif kind == STEP_WAIT:
+            steps.append(_normalize_wait(raw, index))
+        else:
+            raise ValueError(f"路线第 {index} 项 type 必须是 waypoint 或 wait")
+    if not any(step["type"] == STEP_WAYPOINT for step in steps):
+        raise ValueError("路线至少需要一个导航点")
+    return frame, steps
 
 
 class OnlineSlamGoal(Node):
@@ -82,8 +136,10 @@ class OnlineSlamGoal(Node):
         save_goal=True,
         start_mode="immediate",
         game_status_topic="/referee/game_status",
-        route_waypoints=None,
+        route_steps=None,
         record_only=False,
+        auto_aim_topic="/auto_aim_enable",
+        auto_aim_gate=True,
     ):
         super().__init__("online_slam_goal")
         self.goal_x = None if x is None else float(x)
@@ -95,16 +151,19 @@ class OnlineSlamGoal(Node):
         self.start_mode = start_mode
         self.start_allowed = start_mode == "immediate"
         self.game_status_topic = game_status_topic
-        self.route_waypoints = list(route_waypoints or [])
-        self.route_index = 0
+        self.route_steps = list(route_steps or [])
+        self.route_index = -1
         self.record_only = bool(record_only)
         self.current_goal_name = None
-        if self.route_waypoints:
-            first = self.route_waypoints[0]
-            self.goal_x = first["x"]
-            self.goal_y = first["y"]
-            self.goal_yaw = first["yaw"]
-            self.current_goal_name = first["name"]
+        self.in_dwell = False
+        self.dwell_step = None
+        self.dwell_until = None
+        self.auto_aim_topic = auto_aim_topic
+        self.auto_aim_pub = None
+        self.auto_aim_allowed = False
+        self.auto_aim_subscriber_seen = False
+        self.auto_aim_no_sub_warned = False
+        self.gate_enabled_at = None
         self.map_frame = map_frame
         self.base_frame = base_frame
         self.latest_map = None
@@ -160,14 +219,34 @@ class OnlineSlamGoal(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.timer = self.create_timer(0.5, self.try_send_goal)
         self.action_watchdog = self.create_timer(1.0, self.check_action_progress)
-        if self.goal_x is None or self.goal_y is None:
+        self.dwell_timer = self.create_timer(0.1, self.check_dwell)
+        gate_steps = [
+            step
+            for step in self.route_steps
+            if step["type"] == STEP_WAIT and step["auto_aim"]
+        ]
+        if gate_steps and auto_aim_gate:
+            self.auto_aim_pub = self.create_publisher(Bool, self.auto_aim_topic, 10)
+            self.auto_aim_timer = self.create_timer(0.1, self.publish_auto_aim)
+            self.gate_enabled_at = self.get_clock().now()
+            self.get_logger().warn(
+                f"自瞄门控已启用：路线其余时间持续禁止开火，"
+                f"仅在 {len(gate_steps)} 个标记 auto_aim 的等待块期间向 "
+                f"{self.auto_aim_topic} 发送 true"
+            )
+        elif gate_steps:
+            self.get_logger().warn(
+                "路线包含自瞄等待块，但 --no-auto-aim-gate 已禁用门控发布"
+            )
+
+        if self.route_steps:
+            self.get_logger().info(
+                f"已加载顺序路线，共 {len(self.route_steps)} 个步骤"
+            )
+            self.advance_route()
+        elif self.goal_x is None or self.goal_y is None:
             self.get_logger().info(
                 f"等待 RViz 点击目标 ({click_topic})，点击点坐标将按 {self.goal_frame} 解释"
-            )
-        elif self.route_waypoints:
-            self.get_logger().info(
-                f"已加载顺序路线，共 {len(self.route_waypoints)} 个点；"
-                f"当前等待第 1 个点: {self.current_goal_name}"
             )
         else:
             self.get_logger().info(
@@ -269,8 +348,120 @@ class OnlineSlamGoal(Node):
             timeout=Duration(seconds=0.05),
         )
 
+    def set_auto_aim(self, allowed):
+        """Update the auto-aim gate; a no-op when gating is not enabled."""
+        allowed = bool(allowed)
+        if allowed != self.auto_aim_allowed and self.auto_aim_pub is not None:
+            self.get_logger().warn(
+                "自瞄门控切换为 " + ("允许开火" if allowed else "禁止开火")
+            )
+        self.auto_aim_allowed = allowed
+
+    def publish_auto_aim(self):
+        if self.auto_aim_pub is None:
+            return
+        message = Bool()
+        message.data = self.auto_aim_allowed
+        self.auto_aim_pub.publish(message)
+        if self.auto_aim_pub.get_subscription_count() > 0:
+            self.auto_aim_subscriber_seen = True
+            return
+        if self.auto_aim_subscriber_seen or self.auto_aim_no_sub_warned:
+            return
+        if self.gate_enabled_at is None:
+            return
+        waited = (self.get_clock().now() - self.gate_enabled_at).nanoseconds / 1e9
+        if waited < 2.0:
+            return
+        self.auto_aim_no_sub_warned = True
+        self.get_logger().error(
+            f"{self.auto_aim_topic} 目前没有任何订阅者：自瞄可能未启动、"
+            "运行的是不含门控的入口，或话题名不一致；本节点仍会持续发布"
+        )
+
+    def shutdown_auto_aim(self):
+        """Force the gate closed before the node disappears.
+
+        rclpy 的默认信号处理会在 SIGINT/SIGTERM 时直接关闭 context，
+        那时再 publish 会抛 RCLError 并且一条都发不出去。所以这里逐次
+        检查 rclpy.ok()，任何一步失败就安静退出，绝不让收尾路径崩掉。
+        """
+        if self.auto_aim_pub is None:
+            return
+        self.auto_aim_allowed = False
+        message = Bool()
+        message.data = False
+        for _ in range(30):
+            if not rclpy.ok():
+                return
+            try:
+                self.auto_aim_pub.publish(message)
+            except Exception:  # noqa: BLE001 - 收尾路径不允许抛异常
+                return
+            time.sleep(0.01)
+
+    def advance_route(self):
+        """Step forward; a wait block starts a dwell instead of a goal."""
+        self.route_index += 1
+        if self.route_index >= len(self.route_steps):
+            self.finish_route()
+            return
+        step = self.route_steps[self.route_index]
+        if step["type"] == STEP_WAIT:
+            self.begin_dwell(step)
+        else:
+            self.load_waypoint(step)
+
+    def load_waypoint(self, step):
+        self.in_dwell = False
+        self.dwell_step = None
+        self.dwell_until = None
+        self.goal_x = step["x"]
+        self.goal_y = step["y"]
+        self.goal_yaw = step["yaw"]
+        self.current_goal_name = step["name"]
+        self.goal_sent = False
+        self.start_time = self.get_clock().now()
+        self.set_auto_aim(False)
+        self.get_logger().info(
+            f"切换到路线步骤 {self.route_index + 1}/{len(self.route_steps)}: "
+            f"{self.current_goal_name}；若尚未进入地图范围则继续等待地图扩展"
+        )
+
+    def begin_dwell(self, step):
+        self.in_dwell = True
+        self.dwell_step = step
+        self.dwell_until = self.get_clock().now() + Duration(seconds=step["seconds"])
+        self.set_auto_aim(step["auto_aim"])
+        self.get_logger().warn(
+            f"路线步骤 {self.route_index + 1}/{len(self.route_steps)} 停留 "
+            f"{step['seconds']:g} 秒；"
+            + ("该期间允许自瞄开火" if step["auto_aim"] else "该期间保持禁止开火")
+        )
+
+    def check_dwell(self):
+        if not self.in_dwell or self.finished:
+            return
+        if self.get_clock().now() < self.dwell_until:
+            return
+        self.in_dwell = False
+        self.dwell_step = None
+        self.dwell_until = None
+        self.set_auto_aim(False)
+        self.get_logger().info("停留结束，继续执行后续路线步骤")
+        self.advance_route()
+
+    def finish_route(self):
+        self.in_dwell = False
+        self.dwell_step = None
+        self.dwell_until = None
+        self.set_auto_aim(False)
+        if self.route_steps:
+            self.get_logger().info("顺序巡航路线已全部完成")
+        self.finished = True
+
     def try_send_goal(self):
-        if self.goal_sent or self.finished:
+        if self.goal_sent or self.finished or self.in_dwell:
             return
         if self.goal_x is None or self.goal_y is None:
             return
@@ -322,8 +513,8 @@ class OnlineSlamGoal(Node):
         goal.pose.pose.orientation.w = qw
 
         self.goal_sent = True
-        if self.route_waypoints:
-            progress = f"[{self.route_index + 1}/{len(self.route_waypoints)}] "
+        if self.route_steps:
+            progress = f"[{self.route_index + 1}/{len(self.route_steps)}] "
             target_name = self.current_goal_name
         else:
             progress = ""
@@ -351,8 +542,8 @@ class OnlineSlamGoal(Node):
     def feedback_callback(self, feedback_msg):
         distance = feedback_msg.feedback.distance_remaining
         prefix = ""
-        if self.route_waypoints:
-            prefix = f"路线点 {self.route_index + 1}/{len(self.route_waypoints)} "
+        if self.route_steps:
+            prefix = f"路线点 {self.route_index + 1}/{len(self.route_steps)} "
         self.get_logger().info(f"{prefix}目标剩余距离: {distance:.3f} m")
 
     def goal_response_callback(self, future, goal_uuid_key):
@@ -454,32 +645,15 @@ class OnlineSlamGoal(Node):
         self.get_logger().info(f"导航结束，状态码: {status}（来源: {source}）")
         self.active_goal_uuid = None
 
-        if (
-            status == GoalStatus.STATUS_SUCCEEDED
-            and self.route_waypoints
-            and self.route_index + 1 < len(self.route_waypoints)
-        ):
-            self.route_index += 1
-            waypoint = self.route_waypoints[self.route_index]
-            self.goal_x = waypoint["x"]
-            self.goal_y = waypoint["y"]
-            self.goal_yaw = waypoint["yaw"]
-            self.current_goal_name = waypoint["name"]
-            self.goal_sent = False
-            self.start_time = self.get_clock().now()
-            self.get_logger().info(
-                f"切换到路线点 {self.route_index + 1}/{len(self.route_waypoints)}: "
-                f"{self.current_goal_name}；若尚未进入地图范围则继续等待地图扩展"
-            )
+        if status == GoalStatus.STATUS_SUCCEEDED and self.route_steps:
+            self.advance_route()
             return
 
-        if self.route_waypoints and status == GoalStatus.STATUS_SUCCEEDED:
-            self.get_logger().info("顺序巡航路线已全部完成")
-        elif self.route_waypoints:
+        if self.route_steps:
             self.get_logger().error(
-                f"路线在第 {self.route_index + 1} 个点停止，不会跳过失败点"
+                f"路线在第 {self.route_index + 1} 个步骤停止，不会跳过失败点"
             )
-        self.finished = True
+        self.finish_route()
 
 
 def main():
@@ -548,12 +722,22 @@ def main():
         default="/referee/game_status",
         help="比赛状态话题，消息类型为 pb_rm_interfaces/msg/GameStatus",
     )
+    parser.add_argument(
+        "--auto-aim-topic",
+        default="/auto_aim_enable",
+        help="自瞄开关话题 std_msgs/msg/Bool；true 允许开火，false 禁止",
+    )
+    parser.add_argument(
+        "--no-auto-aim-gate",
+        action="store_true",
+        help="即使路线含 auto_aim 等待块也不发布自瞄门控",
+    )
     args, ros_args = parser.parse_known_args()
     if args.use_saved_goal and args.use_saved_route:
         parser.error("--use-saved-goal 和 --use-saved-route 不能同时使用")
 
     saved_goal = None
-    route_waypoints = None
+    route_steps = None
     if args.use_saved_goal:
         try:
             saved_goal = json.loads(
@@ -575,10 +759,12 @@ def main():
             route_data = json.loads(
                 Path(args.route_file).expanduser().read_text(encoding="utf-8")
             )
-            args.goal_frame, route_waypoints = parse_route_data(route_data)
+            args.goal_frame, route_steps = parse_route_data(route_data)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             parser.error(f"读取路线文件失败 {args.route_file}: {exc}")
-        first = route_waypoints[0]
+        first = next(
+            step for step in route_steps if step["type"] == STEP_WAYPOINT
+        )
         args.x = first["x"]
         args.y = first["y"]
         args.yaw = first["yaw"]
@@ -608,17 +794,34 @@ def main():
         save_goal=not args.no_save,
         start_mode=args.start_mode,
         game_status_topic=args.game_status_topic,
-        route_waypoints=route_waypoints,
+        route_steps=route_steps,
         record_only=args.record_only,
+        auto_aim_topic=args.auto_aim_topic,
+        auto_aim_gate=not args.no_auto_aim_gate,
     )
+    # 接管 SIGINT/SIGTERM：rclpy 默认处理会先关闭 context，导致收尾的
+    # 那批 false 发不出去。这里改成置标志、由主循环正常退出。
+    stopping = {"requested": False}
+
+    def request_stop(_signum, _frame):
+        stopping["requested"] = True
+
+    for _sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(_sig, request_stop)
+        except (ValueError, OSError):
+            pass
+
     try:
-        while rclpy.ok() and not node.finished:
+        while rclpy.ok() and not node.finished and not stopping["requested"]:
             rclpy.spin_once(node, timeout_sec=0.2)
     except KeyboardInterrupt:
         node.get_logger().info("用户中止在线 SLAM 目标测试")
     except ExternalShutdownException:
         pass
     finally:
+        if rclpy.ok():
+            node.shutdown_auto_aim()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

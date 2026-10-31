@@ -1,0 +1,27 @@
+{
+  "format": "pfa_online_slam_route/v2",
+  "name": "zzj",
+  "frame": "odom",
+  "steps": [
+    {
+      "type": "waypoint",
+      "name": "k",
+      "x": 1.1098732948303223,
+      "y": -0.5336679220199585,
+      "yaw": 0.0
+    },
+    {
+      "type": "wait",
+      "name": "等待 15 秒",
+      "seconds": 15.0,
+      "auto_aim": true
+    },
+    {
+      "type": "waypoint",
+      "name": "kk",
+      "x": 0.9300947189331055,
+      "y": -1.1122249364852905,
+      "yaw": 0.0
+    }
+  ]
+}

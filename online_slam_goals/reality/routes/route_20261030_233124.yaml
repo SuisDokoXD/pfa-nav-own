@@ -1,0 +1,24 @@
+# 由 online_slam_goal_gui.py 自动生成，可直接被 auto_nav 系列脚本用 --yaml 读取
+# 来源: routes/route_20261030_233124.json (frame=odom)
+# 坐标按记录时的 frame 原样写入；auto_nav_su.py 按 map 帧使用，跨帧需自行对齐
+Waypoints_Num: 2
+Waypoint_1:
+  Type: Waypoint
+  Name: 11
+  Pos_x: 0.199285984039
+  Pos_y: 0.290294229984
+  Pos_z: 0
+  Ori_x: 0
+  Ori_y: 0
+  Ori_z: 0
+  Ori_w: 1
+Waypoint_2:
+  Type: Waypoint
+  Name: 22
+  Pos_x: -0.495009124279
+  Pos_y: 0.0597064495087
+  Pos_z: 0
+  Ori_x: 0
+  Ori_y: 0
+  Ori_z: 0
+  Ori_w: 1

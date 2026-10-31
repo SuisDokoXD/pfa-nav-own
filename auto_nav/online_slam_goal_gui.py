@@ -29,7 +29,8 @@ ENVIRONMENT_DEFAULTS = {
 }
 CORE_SCRIPT = Path(__file__).resolve().with_name("online_slam_goal.py")
 SCORER_SCRIPT = PROJECT_ROOT / "tools" / "evaluation" / "nav_eval" / "nav_score.py"
-ROUTE_FORMAT = "pfa_online_slam_route/v1"
+ROUTE_FORMAT = "pfa_online_slam_route/v2"
+ROUTE_FORMAT_V1 = "pfa_online_slam_route/v1"
 
 
 class ScoreDashboard:
@@ -296,11 +297,29 @@ def safe_name(value):
     return value.strip("._") or f"goal_{time.strftime('%Y%m%d_%H%M%S')}"
 
 
-def build_route_payload(name, point_files):
-    """Build the versioned route document from ordered standalone goal files."""
-    points = []
+def build_route_payload(name, items):
+    """Build a v2 route document from ordered waypoint and wait items.
+
+    ``items`` entries are ``{"type": "waypoint", "path": Path}`` or
+    ``{"type": "wait", "seconds": float, "auto_aim": bool}``.
+    """
+    steps = []
     route_frame = None
-    for path in point_files:
+    for item in items:
+        if item["type"] == "wait":
+            seconds = float(item["seconds"])
+            if not math.isfinite(seconds) or not 0.0 < seconds <= 86400.0:
+                raise ValueError("等待秒数须大于 0 且不超过 86400")
+            steps.append(
+                {
+                    "type": "wait",
+                    "name": f"等待 {seconds:g} 秒",
+                    "seconds": seconds,
+                    "auto_aim": bool(item.get("auto_aim", False)),
+                }
+            )
+            continue
+        path = item["path"]
         data = json.loads(path.read_text(encoding="utf-8"))
         frame = data.get("frame")
         if frame not in ("map", "odom") or not all(
@@ -316,21 +335,22 @@ def build_route_payload(name, point_files):
         yaw = float(data.get("yaw", 0.0))
         if not all(math.isfinite(value) for value in (x, y, yaw)):
             raise ValueError(f"{path.name} 的坐标必须是有限数字")
-        points.append(
+        steps.append(
             {
+                "type": "waypoint",
                 "name": path.stem,
                 "x": x,
                 "y": y,
                 "yaw": yaw,
             }
         )
-    if not points:
+    if not any(step["type"] == "waypoint" for step in steps):
         raise ValueError("路线至少需要一个导航点")
     return {
         "format": ROUTE_FORMAT,
         "name": name,
         "frame": route_frame,
-        "waypoints": points,
+        "steps": steps,
     }
 
 
@@ -350,6 +370,7 @@ def build_waypoints_yaml(points, source=None):
     lines.append(
         "# 坐标按记录时的 frame 原样写入；auto_nav_su.py 按 map 帧使用，跨帧需自行对齐"
     )
+    lines.append("# 等待块只存在于路线 JSON，本 yaml 仅包含导航点")
     lines.append(f"Waypoints_Num: {len(points)}")
     for index, point in enumerate(points, 1):
         yaw = float(point.get("yaw", 0.0))
@@ -793,7 +814,13 @@ class GoalLauncher:
             return False
         try:
             route = json.loads(path.read_text(encoding="utf-8"))
-            waypoints = route.get("waypoints", [])
+            steps = route.get("steps")
+            if isinstance(steps, list):
+                waypoints = [
+                    step for step in steps if step.get("type") == "waypoint"
+                ]
+            else:
+                waypoints = route.get("waypoints", [])
             if waypoints:
                 self.start_scorer(waypoints[-1], route.get("frame", "odom"))
         except (OSError, json.JSONDecodeError, TypeError):
@@ -965,7 +992,7 @@ class GoalLauncher:
 
         dialog = tk.Toplevel(self.root)
         dialog.title("编排顺序巡航路线")
-        dialog.geometry("780x500")
+        dialog.geometry("880x560")
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -974,16 +1001,16 @@ class GoalLauncher:
         ttk.Label(
             content,
             text=(
-                "左侧为已录制单点，添加到右侧后可调整先后顺序；"
-                "同一点可以重复添加。第一个点必须位于初始可导航范围内。"
+                "左侧为已录制单点，添加到右侧后可调整先后顺序；同一点可以重复添加。"
+                "「等待」与导航点同级，可插入任意位置，双击可修改时长与自瞄设置。"
             ),
-            wraplength=730,
+            wraplength=820,
         ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
         ttk.Label(content, text="独立导航点").grid(row=1, column=0)
         ttk.Label(content, text="路线执行顺序").grid(row=1, column=2)
-        available = tk.Listbox(content, selectmode=tk.EXTENDED, width=30, height=17)
-        ordered_box = tk.Listbox(content, width=38, height=17)
+        available = tk.Listbox(content, selectmode=tk.EXTENDED, width=28, height=18)
+        ordered_box = tk.Listbox(content, width=46, height=18)
         available.grid(row=2, column=0, sticky="nsew", padx=(0, 10))
         ordered_box.grid(row=2, column=2, sticky="nsew", padx=(10, 0))
         for path in point_files:
@@ -991,20 +1018,60 @@ class GoalLauncher:
 
         ordered = []
 
+        def describe(item):
+            if item["type"] == "wait":
+                tag = "允许自瞄" if item["auto_aim"] else "禁止自瞄"
+                return f"等待 {item['seconds']:g} 秒（{tag}）"
+            return item["path"].stem
+
         def refresh_ordered(select_index=None):
             ordered_box.delete(0, tk.END)
-            for index, path in enumerate(ordered, start=1):
-                ordered_box.insert(tk.END, f"{index:02d}. {path.stem}")
+            for index, item in enumerate(ordered, start=1):
+                ordered_box.insert(tk.END, f"{index:02d}. {describe(item)}")
             if select_index is not None and ordered:
                 select_index = max(0, min(select_index, len(ordered) - 1))
                 ordered_box.selection_set(select_index)
                 ordered_box.see(select_index)
 
+        def ask_wait_seconds(initial):
+            return simpledialog.askfloat(
+                "等待块",
+                "等待秒数（大于 0，最多 86400）：",
+                initialvalue=initial,
+                minvalue=0.001,
+                maxvalue=86400.0,
+                parent=dialog,
+            )
+
+        def ask_auto_aim():
+            return messagebox.askyesno(
+                "等待期间自瞄",
+                "该等待期间是否允许自瞄开火？\n\n"
+                "选「是」：仅在此时段内发送允许开火；\n"
+                "选「否」：该时段同样保持禁止开火。\n\n"
+                "路线其余时间都会持续发送禁止开火。",
+                parent=dialog,
+            )
+
         def add_selected(_event=None):
             selections = available.curselection()
             for index in selections:
-                ordered.append(point_files[index])
-            refresh_ordered(len(ordered) - 1 if ordered else None)
+                ordered.append({"type": "waypoint", "path": point_files[index]})
+            if selections:
+                refresh_ordered(len(ordered) - 1)
+
+        def add_wait():
+            seconds = ask_wait_seconds(15.0)
+            if seconds is None:
+                return
+            ordered.append(
+                {
+                    "type": "wait",
+                    "seconds": float(seconds),
+                    "auto_aim": bool(ask_auto_aim()),
+                }
+            )
+            refresh_ordered(len(ordered) - 1)
 
         def remove_selected():
             selection = ordered_box.curselection()
@@ -1025,17 +1092,39 @@ class GoalLauncher:
             ordered[index], ordered[new_index] = ordered[new_index], ordered[index]
             refresh_ordered(new_index)
 
+        def edit_selected(_event=None):
+            selection = ordered_box.curselection()
+            if not selection:
+                return
+            index = selection[0]
+            item = ordered[index]
+            if item["type"] != "wait":
+                messagebox.showinfo(
+                    "无需编辑",
+                    "导航点坐标来自已保存的单点文件；如需改动请重新录制该点。",
+                    parent=dialog,
+                )
+                return
+            seconds = ask_wait_seconds(item["seconds"])
+            if seconds is None:
+                return
+            item["seconds"] = float(seconds)
+            item["auto_aim"] = bool(ask_auto_aim())
+            refresh_ordered(index)
+
+        ordered_box.bind("<Double-Button-1>", edit_selected)
+
         controls = ttk.Frame(content)
-        controls.grid(row=2, column=1, sticky="n", pady=20)
-        ttk.Button(controls, text="添加 →", command=add_selected, width=10).pack(pady=4)
-        ttk.Button(controls, text="移除", command=remove_selected, width=10).pack(pady=4)
-        ttk.Button(
-            controls, text="上移", command=lambda: move_selected(-1), width=10
-        ).pack(pady=4)
-        ttk.Button(
-            controls, text="下移", command=lambda: move_selected(1), width=10
-        ).pack(pady=4)
-        available.bind("<Double-Button-1>", add_selected)
+        controls.grid(row=2, column=1, sticky="n", pady=10)
+        for text, command in (
+            ("添加 →", add_selected),
+            ("添加等待", add_wait),
+            ("编辑", edit_selected),
+            ("移除", remove_selected),
+            ("上移", lambda: move_selected(-1)),
+            ("下移", lambda: move_selected(1)),
+        ):
+            ttk.Button(controls, text=text, command=command, width=12).pack(pady=4)
 
         bottom = ttk.Frame(content)
         bottom.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(14, 0))
@@ -1070,10 +1159,14 @@ class GoalLauncher:
                 messagebox.showerror("路线保存失败", str(exc), parent=dialog)
                 return
             yaml_target = target.with_suffix(".yaml")
+            waypoints = [
+                step for step in payload["steps"] if step["type"] == "waypoint"
+            ]
+            waits = [step for step in payload["steps"] if step["type"] == "wait"]
             try:
                 write_waypoints_yaml(
                     yaml_target,
-                    payload["waypoints"],
+                    waypoints,
                     source=f"routes/{target.name} (frame={payload['frame']})",
                 )
             except OSError as exc:
@@ -1086,10 +1179,12 @@ class GoalLauncher:
                 if payload["frame"] == "map"
                 else "odom 帧，需与地图对齐后使用"
             )
+            gated = sum(1 for step in waits if step["auto_aim"])
             self.status.config(
                 text=(
                     f"已保存路线：routes/{target.name} + {yaml_target.name}"
-                    f"（{frame_hint}，共 {len(payload['waypoints'])} 个点）"
+                    f"（{frame_hint}，{len(waypoints)} 个点，{len(waits)} 个等待块，"
+                    f"其中 {gated} 个允许自瞄）"
                 )
             )
             dialog.destroy()

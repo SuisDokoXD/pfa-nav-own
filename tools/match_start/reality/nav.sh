@@ -6,14 +6,16 @@ set -Eeuo pipefail
 WORKSPACE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SETUP_FILE="${SETUP_FILE:-$WORKSPACE/install/setup.bash}"
 MAP_FILE="${MAP_FILE:-$WORKSPACE/src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/game.yaml}"
-PCD_FILE="${PCD_FILE:-$WORKSPACE/src/pb2025_sentry_nav/point_lio/PCD/scans.pcd}"
+PCD_FILE="${PCD_FILE:-$WORKSPACE/src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/reality/game.pcd}"
 NAMESPACE="${NAMESPACE:-}"
 USE_RVIZ="${USE_RVIZ:-False}"
+USE_ROBOT_STATE_PUB="${USE_ROBOT_STATE_PUB:-True}"
 ROS_LOG_DIR="${ROS_LOG_DIR:-$WORKSPACE/log/ros}"
 
 for required in "$SETUP_FILE" "$MAP_FILE" "$PCD_FILE"; do
-  if [[ ! -f "$required" ]]; then
-    echo "ERROR: required navigation file is missing: $required" >&2
+  if [[ ! -f "$required" || ! -s "$required" ]]; then
+    echo "ERROR: required navigation file is missing or empty: $required" >&2
+    echo "After SLAM, install the matching grid/PCD set with: bash tools/map/prepare_reality_map.sh game --copy" >&2
     exit 1
   fi
 done
@@ -41,7 +43,7 @@ launch_args=(
   prior_pcd_file:="$PCD_FILE" \
   slam:=False \
   use_sim_time:=False \
-  use_robot_state_pub:=True \
+  use_robot_state_pub:="$USE_ROBOT_STATE_PUB" \
   use_livox_driver:=True \
   use_rviz:="$USE_RVIZ" \
   auto_save_map:=False \

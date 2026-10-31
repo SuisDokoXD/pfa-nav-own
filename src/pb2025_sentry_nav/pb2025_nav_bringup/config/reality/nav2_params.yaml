@@ -434,7 +434,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
-        inflation_radius: 0.3
+        inflation_radius: 0.35  # Must exceed the padded inscribed radius (~0.304 m).
       always_send_full_costmap: False
 
 global_costmap:

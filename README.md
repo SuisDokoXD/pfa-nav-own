@@ -91,6 +91,8 @@ ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME> --ros-args -r __ns:=/r
 ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py slam:=True use_robot_state_pub:=True
 ```
 
+单独运行导航工作区时，建图和先验导航都要传 `use_robot_state_pub:=True`。该参数默认是 `False`，只有完整机器人系统已经在相同命名空间发布 `base_footprint`、`front_mid360`、`gimbal_yaw` 的 TF 时才可以省略或设为 `False`，避免重复发布 TF。缺少这些 TF 会导致 `loam_interface` 一直重试，随后 Nav2 一直等待 `gimbal_yaw_fake -> odom`。
+
 2.一键启动实车建图以及目标点管理工具
 
 (1)打开实车在线建图、Nav2、RViz 和目标管理小工具：
@@ -152,43 +154,60 @@ ros2 bag play <BAG_DIR> --clock
 ## 实车地图归位
 想要将实车建图生成的地图导入实车先验导航，须进行以下操作：
 
+`slam:=True` 负责建图，`slam:=False` 负责读取先验地图导航，二者按顺序分开启动。自动保存的 `auto_map_*.yaml/.pgm` 和 `point_lio/PCD/scans.pcd` 不会自动替换先验导航的 `game.*`。只保存当前目录的 `game.yaml/game.pgm` 也不够，必须完成下面的导入步骤。栅格地图与点云应来自同一次建图，不要把旧栅格地图与新点云混用。
+
 1.建图完成后，先不要关闭建图程序，新开终端保存栅格地图：
 
 ```bash
-ros2 run nav2_map_server map_saver_cli -f game
+cd /home/pfa/sight/new/pfa-nav-own
+source install/setup.bash
+ros2 run nav2_map_server map_saver_cli -t /map -f "$PWD/game" --fmt pgm --mode trinary --ros-args -p save_map_timeout:=15.0 -p map_subscribe_transient_local:=true
 ```
 
-2.保存完成后再结束建图程序，让 point_lio 写出 `src/pb2025_sentry_nav/point_lio/PCD/scans.pcd`。随后在工作空间根目录运行脚本，把实车地图和点云放到导航默认读取的位置：
+`-f game` 保存到执行命令时的当前目录，不会直接导入先验导航目录。请等待 `Map saved successfully`，并检查当前目录中 `game.yaml` / `game.pgm` 的修改时间和文件大小，不能只凭旧文件仍然存在判断本次成功。保存失败时先确认在线建图终端没有退出，并运行 `ros2 topic info /map -v` 检查地图发布者；如果使用了 `--namespace robot1`，保存时相应改为 `-t /robot1/map`。两个终端应使用相同的 `ROS_DOMAIN_ID` 和 ROS 通信配置。没有地图发布时，增加超时也不能保存地图。
+
+2.保存完成后再结束建图程序，等待日志出现 `Saved final 3D point cloud`，确认 point_lio 已写出 `src/pb2025_sentry_nav/point_lio/PCD/scans.pcd`。随后在工作空间根目录运行脚本，把实车地图和点云复制到导航默认读取的位置，保留原始输出：
 
 ```bash
-bash tools/map/prepare_reality_map.sh game
+bash tools/map/prepare_reality_map.sh game --copy
 ```
 
 脚本会执行这些操作：
 
-(1)- 将当前目录下的 `game.yaml` / `game.pgm` 放到 `src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/`
-(2).- 将 `src/pb2025_sentry_nav/point_lio/PCD/scans.pcd` 放到 `src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/reality/game.pcd`
-(3).- 自动修改移动后的 `game.yaml` 文件，将其中的 `image` 字段改成 `game.pgm`
+(1)- 将当前目录下的 `game.yaml` / `game.pgm` 复制到 `src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/`
+(2).- 将 `src/pb2025_sentry_nav/point_lio/PCD/scans.pcd` 复制到 `src/pb2025_sentry_nav/pb2025_nav_bringup/pcd/reality/game.pcd`
+(3).- 自动修改导入后的 `game.yaml` 文件，将其中的 `image` 字段改成 `game.pgm`
+
+省略 `--copy` 时仍使用原来的移动模式。导入脚本会先检查三份源文件和目标冲突，避免只装入部分地图；导航启动前也会检查 YAML、地图图像和 PCD 是否齐全。
 
 3.如果保存地图时使用了别的名字，例如 `my_map.yaml` / `my_map.pgm`，但导航时仍想用 `world:=game`：
 就执行以下命令：
 
 ```bash
-bash tools/map/prepare_reality_map.sh game --map-name my_map
+bash tools/map/prepare_reality_map.sh game --map-name my_map --copy
 ```
 
-4.如果目标目录已有同名文件，需要覆盖：
-则执行以下命令
+4.仓库自带的 `map/reality/game.yaml/game.pgm` 属于旧地图。首次替换以及以后重新建图时，若目标目录已有同名文件，先备份需要保留的旧文件，再执行以下命令覆盖：
 
 ```bash
-bash tools/map/prepare_reality_map.sh game --force
+bash tools/map/prepare_reality_map.sh game --copy --force
 ```
 
-5.移动完成后无需重新编译，可以直接启动实车导航：
+5.导入完成后无需重新编译，可以直接启动实车导航：
 
 ```bash
 ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py world:=game slam:=False use_robot_state_pub:=True
 ```
+
+也可使用实车先验导航入口（默认不开 RViz；地图和点云都读取导入后的 `reality/game.*`，不会读取下一次建图生成的临时 `scans.pcd`）：
+
+```bash
+USE_RVIZ=True bash tools/match_start/reality/nav.sh
+```
+
+如果完整机器人系统已在发布上述 TF，直接启动时设 `use_robot_state_pub:=False`，脚本入口则设 `USE_ROBOT_STATE_PUB=False`。导航启动成功的标志是 `lifecycle_manager_navigation` 输出 `Managed nodes are active`；地图正常显示不代表导航已经激活。`Could not find .../pcd/reality/game.pcd` 表示尚未导入点云；持续出现 `base_footprint ... does not exist` / `gimbal_yaw_fake ... does not exist` 则先检查机器人 TF 发布及命名空间。
+
+注意区分运行失败与退出异常：`Ctrl+C` 后 Livox/RViz 崩溃或组件容器退出超时属于另一类关闭问题，不能据此判断之前的建图没有成功。是否保存成功应检查 `Map saved successfully`、`Saved final 3D point cloud` 以及实际文件；这些关闭问题仍需单独排查。
 
 ## 在rviz可视化机器人模型
 
