@@ -55,3 +55,15 @@ src/pb2025_sentry_nav/point_lio/PCD/scans_*.pcd
 
 # Local backups made before replacing real-robot maps
 tools/map/backups/
+
+# ======================================
+# Point-cloud and map artifacts (local only)
+# ======================================
+*.pcd
+*.pgm
+# Map metadata that accompanies a PGM map
+/game.yaml
+**/map/*.yaml
+**/map/**/*.yaml
+# Runtime pending route state
+**/.pending_*.json
