@@ -9,6 +9,7 @@ from route_session import (
     finish_session,
     is_session_route,
     load_session,
+    validate_route_declaration,
     validate_session,
     validate_session_route,
 )
@@ -127,6 +128,29 @@ class RouteSessionTest(unittest.TestCase):
     def test_session_id_cannot_escape_root(self):
         with self.assertRaises(ValueError):
             load_session("../../etc", self.root)
+
+
+class RouteDeclarationTest(unittest.TestCase):
+    def test_temporary_route_requires_matching_session(self):
+        data = {"frame": "odom", "temporary": True, "session_id": "abc"}
+        self.assertTrue(validate_route_declaration(data, "abc"))
+        with self.assertRaisesRegex(ValueError, "必须提供 session_id"):
+            validate_route_declaration(data, None)
+        with self.assertRaisesRegex(ValueError, "不一致"):
+            validate_route_declaration(data, "other")
+
+    def test_non_temporary_route_cannot_claim_session(self):
+        with self.assertRaisesRegex(ValueError, "不能携带 session_id"):
+            validate_route_declaration(
+                {"frame": "map", "session_id": "abc"}, "abc"
+            )
+
+    def test_odom_persistent_route_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "odom 路线"):
+            validate_route_declaration({"frame": "odom"}, None)
+
+    def test_map_persistent_route_is_allowed(self):
+        self.assertFalse(validate_route_declaration({"frame": "map"}, None))
 
 
 if __name__ == "__main__":

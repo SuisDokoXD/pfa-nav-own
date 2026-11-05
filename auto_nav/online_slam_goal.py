@@ -38,6 +38,7 @@ from route_contract import (
 from route_session import (
     is_session_route,
     mark_status,
+    validate_route_declaration,
     validate_session_route,
     write_failure_diagnostics,
 )
@@ -904,9 +905,14 @@ def main():
             route_steps = route_document.steps
             if route_document.map_metadata is not None:
                 route_map_id = route_document.map_metadata["map_id"]
+            temporary = validate_route_declaration(
+                route_data, args.session_id
+            )
             route_path = Path(args.route_file).expanduser().resolve()
             if args.session_id:
                 session = validate_session_route(route_path, args.session_id)
+                if not temporary:
+                    parser.error("session 路线必须标记 temporary: true")
             elif is_session_route(route_path):
                 parser.error("临时路线必须提供 --session-id")
         except (OSError, json.JSONDecodeError, ValueError) as exc:

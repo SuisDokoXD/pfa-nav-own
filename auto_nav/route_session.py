@@ -114,6 +114,27 @@ def validate_session(session_id, root=None) -> Session:
     return session
 
 
+def validate_route_declaration(data, session_id):
+    """Validate temporary/session markers in a route document."""
+    if not isinstance(data, dict):
+        raise ValueError("路线必须是对象")
+    raw_temporary = data.get("temporary", False)
+    if not isinstance(raw_temporary, bool):
+        raise ValueError("temporary 必须是布尔值")
+    temporary = raw_temporary
+    declared_session = data.get("session_id")
+    if temporary:
+        if not session_id:
+            raise ValueError("临时路线必须提供 session_id")
+        if declared_session != session_id:
+            raise ValueError("临时路线 session_id 与当前 session 不一致")
+    elif declared_session:
+        raise ValueError("非临时路线不能携带 session_id")
+    if data.get("frame") == "odom" and not session_id:
+        raise ValueError("odom 路线只能作为 session 临时路线执行")
+    return temporary
+
+
 def is_session_route(path, root=None) -> bool:
     root = session_root(root)
     try:

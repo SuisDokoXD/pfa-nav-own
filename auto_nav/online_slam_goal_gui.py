@@ -787,6 +787,8 @@ class GoalLauncher:
             if frame == "map":
                 target = self.route_dir / f"{name}.json"
             else:
+                payload["temporary"] = True
+                payload["session_id"] = self.session.session_id
                 target = self.session.routes_dir / f"{name}.json"
             if target.exists() and not messagebox.askyesno(
                 "路线已存在", f"{target.name} 已存在，是否覆盖？", parent=dialog
