@@ -30,6 +30,7 @@ from route_session import (
     finish_session,
     is_session_route,
     load_session,
+    mark_status,
     validate_session_route,
 )
 
@@ -221,8 +222,10 @@ class GoalLauncher:
         cleanup_stale_sessions()
         self.session = create_session(kind="gui")
         self.child = None
+        self.child_started = False
         self.last_child_returncode = None
         self.pending_file = None
+        self.pending_temp = False
         self.name_prompt_open = False
         self.closing = False
 
@@ -312,6 +315,7 @@ class GoalLauncher:
             *self.ros_prefix(),
         ]
         self.status.config(text="已启动 ROS 目标节点，请查看终端输出和 RViz。")
+        self.child_started = True
         self.child = subprocess.Popen(command, cwd=str(PROJECT_ROOT))
         self.root.after(500, self.watch_navigation)
 
@@ -361,10 +365,18 @@ class GoalLauncher:
         try:
             session = load_session(self.session.session_id)
             if session is not None:
+                if not self.child_started:
+                    mark_status(session, "completed")
+                    success = True
+                else:
+                    success = (
+                        self.last_child_returncode == 0
+                        and session.manifest.get("status") == "completed"
+                    )
                 failed = session.manifest.get("status") == "failed"
                 finish_session(
                     session,
-                    success=self.last_child_returncode in (None, 0) and not failed,
+                    success=success,
                     diagnostics=None
                     if failed
                     else {
@@ -393,10 +405,13 @@ class GoalLauncher:
         )
 
     def saved_goal_files(self):
+        directory = (
+            self.session.points_dir
+            if self.record_frame == "odom"
+            else self.goal_dir
+        )
         return sorted(
-            path
-            for path in self.goal_dir.glob("*.json")
-            if not path.name.startswith(".")
+            path for path in directory.glob("*.json") if not path.name.startswith(".")
         )
 
     def saved_route_files(self):
@@ -428,6 +443,13 @@ class GoalLauncher:
             return False
         if not self.confirm_test_start():
             self.status.config(text="已取消实车测试放行，未启动目标节点。")
+            return False
+        if path.parent == self.session.points_dir:
+            messagebox.showinfo(
+                "临时目标点",
+                "odom 临时点只能用于当前会话的路线编辑，不能单独执行。",
+                parent=self.root,
+            )
             return False
         try:
             goal_data = json.loads(path.read_text(encoding="utf-8"))
@@ -493,7 +515,13 @@ class GoalLauncher:
         if not record_only and not self.confirm_test_start():
             self.status.config(text="已取消实车测试放行，未启动目标节点。")
             return
-        pending = self.goal_dir / f".pending_{os.getpid()}.json"
+        pending_dir = (
+            self.session.points_dir
+            if self.record_frame == "odom"
+            else self.goal_dir
+        )
+        self.pending_temp = self.record_frame == "odom"
+        pending = pending_dir / f".pending_{os.getpid()}.json"
         if pending.exists():
             pending.unlink()
         self.pending_file = pending
@@ -539,7 +567,10 @@ class GoalLauncher:
         )
         if not name:
             name = default
-        target = self.goal_dir / f"{safe_name(name)}.json"
+        target_dir = (
+            self.session.points_dir if self.pending_temp else self.goal_dir
+        )
+        target = target_dir / f"{safe_name(name)}.json"
         if target.exists():
             overwrite = messagebox.askyesno(
                 "目标已存在",
@@ -547,11 +578,12 @@ class GoalLauncher:
                 parent=self.root,
             )
             if not overwrite:
-                target = self.goal_dir / (
+                target = target_dir / (
                     f"{safe_name(name)}_{time.strftime('%H%M%S')}.json"
                 )
         shutil.move(str(self.pending_file), str(target))
         self.pending_file = None
+        self.pending_temp = False
         self.name_prompt_open = False
         if self.pending_record_only:
             self.status.config(text=f"已保存目标：{target.name}，未发送导航目标。")

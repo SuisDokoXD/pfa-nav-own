@@ -9,6 +9,7 @@ from route_session import (
     finish_session,
     is_session_route,
     load_session,
+    mark_status,
     validate_route_declaration,
     validate_session,
     validate_session_route,
@@ -64,14 +65,26 @@ class RouteSessionTest(unittest.TestCase):
     def test_success_finish_removes_routes_and_session(self):
         session = create_session(root=self.root)
         self.make_route(session)
+        mark_status(session, "completed")
 
         finish_session(session, success=True)
 
         self.assertFalse(session.path.exists())
 
+    def test_active_session_cannot_be_finished_as_success(self):
+        session = create_session(root=self.root)
+        self.make_route(session)
+
+        with self.assertRaisesRegex(ValueError, "active session"):
+            finish_session(session, success=True)
+
+        self.assertTrue(session.path.exists())
+
     def test_failure_keeps_diagnostics_but_removes_executable_route(self):
         session = create_session(root=self.root)
         route = self.make_route(session)
+        point = session.points_dir / "point.json"
+        point.write_text("{}", encoding="utf-8")
 
         finish_session(
             session,
@@ -80,6 +93,7 @@ class RouteSessionTest(unittest.TestCase):
         )
 
         self.assertFalse(route.exists())
+        self.assertFalse(point.exists())
         self.assertTrue((session.diagnostics_dir / "failure.json").is_file())
         manifest = json.loads(
             (session.path / "manifest.json").read_text(encoding="utf-8")

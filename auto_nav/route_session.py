@@ -19,6 +19,7 @@ from pathlib import Path
 DEFAULT_SESSION_ROOT = Path(__file__).resolve().parents[1] / "runtime" / "sessions"
 MANIFEST_NAME = "manifest.json"
 ROUTES_DIR = "routes"
+POINTS_DIR = "points"
 DIAGNOSTICS_DIR = "diagnostics"
 
 
@@ -31,6 +32,10 @@ class Session:
     @property
     def routes_dir(self) -> Path:
         return self.path / ROUTES_DIR
+
+    @property
+    def points_dir(self) -> Path:
+        return self.path / POINTS_DIR
 
     @property
     def diagnostics_dir(self) -> Path:
@@ -77,6 +82,7 @@ def create_session(kind="navigation", root=None, session_id=None) -> Session:
     if path.exists():
         raise FileExistsError(f"session 已存在: {path}")
     (path / ROUTES_DIR).mkdir(parents=True, exist_ok=False)
+    (path / POINTS_DIR).mkdir(parents=True, exist_ok=True)
     (path / DIAGNOSTICS_DIR).mkdir(parents=True, exist_ok=True)
     manifest = {
         "version": 1,
@@ -180,8 +186,10 @@ def write_failure_diagnostics(session: Session, diagnostics) -> Path:
 
 
 def finish_session(session: Session, success=True, diagnostics=None) -> None:
-    """Delete executable temporary routes; keep diagnostics on failure."""
+    """Delete executable temporary data; keep diagnostics on failure."""
     if success:
+        if session.manifest.get("status") == "active":
+            raise ValueError("active session 不能按成功清理")
         shutil.rmtree(session.path, ignore_errors=True)
         return
     failure_path = session.diagnostics_dir / "failure.json"
@@ -191,9 +199,10 @@ def finish_session(session: Session, success=True, diagnostics=None) -> None:
         write_failure_diagnostics(
             session, {"session_id": session.session_id, "status": "failed"}
         )
-    routes_dir = session.routes_dir
-    if routes_dir.is_dir():
-        for child in routes_dir.iterdir():
+    for directory in (session.routes_dir, session.points_dir):
+        if not directory.is_dir():
+            continue
+        for child in directory.iterdir():
             if child.is_dir():
                 shutil.rmtree(child, ignore_errors=True)
             else:
@@ -241,8 +250,11 @@ def cleanup_stale_sessions(root=None):
         if _pid_alive(manifest.get("pid")):
             continue
         routes_dir = path / ROUTES_DIR
-        if routes_dir.is_dir():
-            for child in routes_dir.iterdir():
+        points_dir = path / POINTS_DIR
+        for data_dir in (routes_dir, points_dir):
+            if not data_dir.is_dir():
+                continue
+            for child in data_dir.iterdir():
                 if child.is_dir():
                     shutil.rmtree(child, ignore_errors=True)
                 else:
