@@ -6,7 +6,7 @@ from rclpy.node import Node
 from action_msgs.msg import GoalStatus
 from collections import deque
 from geometry_msgs.msg import PoseStamped, Twist
-from nav_msgs.msg import Path
+from nav_msgs.msg import OccupancyGrid, Path
 from visualization_msgs.msg import Marker, MarkerArray
 from nav2_msgs.action import NavigateToPose, NavigateThroughPoses
 from rcl_interfaces.msg import Log
@@ -17,6 +17,11 @@ from rclpy.time import Time
 from std_msgs.msg import Float32, UInt8
 from tf2_ros import Buffer, TransformException, TransformListener
 from tf2_msgs.msg import TFMessage
+from route_contract import (
+    map_id_matches,
+    map_metadata_from_occupancy,
+    parse_yaml_map_header,
+)
 import yaml
 import argparse
 import time
@@ -264,6 +269,9 @@ class AutoNavNode(Node):
 
         self.map_frame = map_frame
         self.chassis_frame = chassis_frame
+        self.current_map_id = None
+        self.map_identity_mismatch_logged = False
+        self.last_map_wait_log = 0.0
         self.position_frame = 'gimbal_yaw_fake'
         self.velocity_frame = velocity_frame
         self.yaw_log_distance = abs(yaw_log_distance)
@@ -292,6 +300,15 @@ class AutoNavNode(Node):
         self.namespaced_tf_static_sub = self.create_subscription(
             TFMessage, tf_static_topic, self.tf_static_callback, tf_static_qos
         )
+        map_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        self.map_sub = self.create_subscription(
+            OccupancyGrid, 'map', self.map_callback, map_qos
+        )
+
         path_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -741,12 +758,47 @@ class AutoNavNode(Node):
         self.start_straight_calibration(next_idx)
 
     def load_waypoints(self, yaml_path):
-        """从 YAML 文件加载所有航点"""
+        """从 YAML 加载航点，并校验路线坐标系与地图身份。"""
         with open(yaml_path, 'r') as f:
             data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            raise ValueError("航点 YAML 必须是对象")
+        frame, map_metadata, legacy = parse_yaml_map_header(data)
+        if legacy:
+            frame = "map"
+            self.get_logger().warn(
+                f"{yaml_path} 没有 Route_Frame，按旧版 map 航点处理；"
+                "该文件没有地图身份，无法校验 map_id"
+            )
+        if frame == "odom":
+            raise ValueError(
+                "auto_nav_su 不接受 odom 帧 YAML；odom 路线请使用 JSON 执行器，"
+                "A1 临时路线尚未实现"
+            )
+        if frame != "map":
+            raise ValueError("航点 YAML 的 Route_Frame 必须是 map")
+        self.route_frame = frame
+        self.route_map_id = (
+            map_metadata["map_id"] if map_metadata is not None else None
+        )
+        if map_metadata is None and not legacy:
+            self.get_logger().warn(
+                f"{yaml_path} 声明为 map 但没有 Map.map_id；"
+                "本次按旧文件放行，无法校验地图身份"
+            )
+        elif map_metadata is not None:
+            self.get_logger().info(
+                f"路线地图身份: {self.route_map_id}"
+            )
+        count = data.get('Waypoints_Num')
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ValueError("航点 YAML 的 Waypoints_Num 必须是正整数")
         waypoints = []
-        for i in range(1, data['Waypoints_Num'] + 1):
-            waypoints.append(data[f'Waypoint_{i}'])
+        for i in range(1, count + 1):
+            waypoint = data.get(f'Waypoint_{i}')
+            if not isinstance(waypoint, dict):
+                raise ValueError(f"航点 YAML 缺少 Waypoint_{i}")
+            waypoints.append(waypoint)
         return waypoints
 
     def load_targets_from_file(self, file_path):
@@ -847,7 +899,7 @@ class AutoNavNode(Node):
         """根据 waypoint 索引构造 PoseStamped"""
         wp = self.waypoints[waypoint_idx]
         pose = PoseStamped()
-        pose.header.frame_id = 'map'
+        pose.header.frame_id = self.map_frame
         pose.header.stamp = self.get_clock().now().to_msg()
         pose.pose.position.x = float(wp['Pos_x'])
         pose.pose.position.y = float(wp['Pos_y'])
@@ -1783,8 +1835,47 @@ class AutoNavNode(Node):
         time.sleep(0.5)
         self.get_logger().info('准备重新发送整条路线')
 
+    def map_callback(self, msg):
+        """缓存当前 /map 的身份，用于拒绝跨地图路线。"""
+        try:
+            self.current_map_id = map_metadata_from_occupancy(
+                msg.info, msg.data
+            )["map_id"]
+        except (TypeError, ValueError) as exc:
+            self.current_map_id = None
+            self.get_logger().warn(f"无法计算 /map 身份: {exc}")
+
+    def map_identity_ready(self):
+        """返回 True 仅当路线地图身份已确认匹配。"""
+        if not self.route_map_id:
+            return True
+        if self.current_map_id is None:
+            now = time.monotonic()
+            if now - self.last_map_wait_log >= 5.0:
+                self.get_logger().warn(
+                    "等待 /map 以校验路线地图身份 "
+                    f"{self.route_map_id}..."
+                )
+                self.last_map_wait_log = now
+            return False
+        if not map_id_matches(
+            {"map_id": self.current_map_id},
+            {"map_id": self.route_map_id},
+        ):
+            if not self.map_identity_mismatch_logged:
+                self.get_logger().error(
+                    "路线地图身份不匹配："
+                    f"route={self.route_map_id}, current={self.current_map_id}；"
+                    "拒绝发送导航目标"
+                )
+                self.map_identity_mismatch_logged = True
+            return False
+        return True
+
     def navigation_loop(self):
         """循环导航定时器回调"""
+        if not self.map_identity_ready():
+            return
         if not self.sending and not self.calibrating and not self.base_waiting and not self.extra_straight_waiting:
             if self.judge_control_active:
                 if self.judge_idle:

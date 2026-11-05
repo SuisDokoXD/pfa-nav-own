@@ -14,8 +14,10 @@ from online_slam_goal import (
     STEP_WAYPOINT,
     OnlineSlamGoal,
     parse_route_data,
+    parse_route_document,
 )
 from online_slam_goal_gui import GoalLauncher, build_route_payload
+from auto_nav_su import AutoNavNode
 
 
 class FakeTime:
@@ -180,6 +182,35 @@ class RouteFormatTest(unittest.TestCase):
                 }
             )
 
+    def test_v2_map_route_requires_map_identity(self):
+        document = {
+            "format": ROUTE_FORMAT,
+            "frame": "map",
+            "steps": [{"type": STEP_WAYPOINT, "x": 1.0, "y": 2.0}],
+        }
+        with self.assertRaisesRegex(ValueError, "map_id"):
+            parse_route_document(document, require_map_identity=True)
+
+    def test_v2_map_route_carries_map_identity(self):
+        document = {
+            "format": ROUTE_FORMAT,
+            "frame": "map",
+            "map": {"map_id": "abc123", "width": 10, "height": 20},
+            "steps": [{"type": STEP_WAYPOINT, "x": 1.0, "y": 2.0}],
+        }
+        parsed = parse_route_document(document, require_map_identity=True)
+        self.assertEqual(parsed.map_metadata["map_id"], "abc123")
+
+    def test_odom_route_with_map_identity_is_rejected(self):
+        document = {
+            "format": ROUTE_FORMAT,
+            "frame": "odom",
+            "map": {"map_id": "abc123"},
+            "steps": [{"type": STEP_WAYPOINT, "x": 1.0, "y": 2.0}],
+        }
+        with self.assertRaisesRegex(ValueError, "odom 路线"):
+            parse_route_document(document)
+
 
 class RouteExecutionTest(unittest.TestCase):
     STEP_A1 = {"type": STEP_WAYPOINT, "name": "a1", "x": 1.0, "y": 1.0, "yaw": 0.0}
@@ -335,6 +366,76 @@ class ShutdownGateTest(unittest.TestCase):
             node.shutdown_auto_aim()
 
         self.assertFalse(node.auto_aim_allowed)
+
+
+class WaypointYamlTest(unittest.TestCase):
+    def make_node(self):
+        node = AutoNavNode.__new__(AutoNavNode)
+        node.logs = []
+        logger = SimpleNamespace(
+            info=lambda message: node.logs.append(message),
+            warn=lambda message: node.logs.append(message),
+            error=lambda message: node.logs.append(message),
+        )
+        node.get_logger = lambda: logger
+        return node
+
+    def write_yaml(self, directory, text):
+        path = Path(directory) / "waypoints.yaml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_yaml_map_identity_is_loaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_yaml(
+                directory,
+                "Route_Format: pfa_online_slam_route/v2\n"
+                "Route_Frame: map\n"
+                "Map:\n"
+                "  map_id: abc123\n"
+                "Waypoints_Num: 1\n"
+                "Waypoint_1:\n"
+                "  Pos_x: 1.0\n"
+                "  Pos_y: 2.0\n",
+            )
+            node = self.make_node()
+            waypoints = node.load_waypoints(path)
+
+        self.assertEqual(len(waypoints), 1)
+        self.assertEqual(node.route_frame, "map")
+        self.assertEqual(node.route_map_id, "abc123")
+
+    def test_odom_yaml_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_yaml(
+                directory,
+                "Route_Format: pfa_online_slam_route/v2\n"
+                "Route_Frame: odom\n"
+                "Waypoints_Num: 1\n"
+                "Waypoint_1:\n"
+                "  Pos_x: 1.0\n"
+                "  Pos_y: 2.0\n",
+            )
+            node = self.make_node()
+            with self.assertRaisesRegex(ValueError, "不接受 odom"):
+                node.load_waypoints(path)
+
+    def test_legacy_yaml_is_map_without_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_yaml(
+                directory,
+                "Waypoints_Num: 1\n"
+                "Waypoint_1:\n"
+                "  Pos_x: 1.0\n"
+                "  Pos_y: 2.0\n",
+            )
+            node = self.make_node()
+            waypoints = node.load_waypoints(path)
+
+        self.assertEqual(len(waypoints), 1)
+        self.assertEqual(node.route_frame, "map")
+        self.assertIsNone(node.route_map_id)
+        self.assertTrue(any("没有 Route_Frame" in line for line in node.logs))
 
 
 class GuiStopTest(unittest.TestCase):

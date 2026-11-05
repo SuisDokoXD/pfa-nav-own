@@ -12,6 +12,7 @@ import math
 import signal
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import rclpy
@@ -27,9 +28,15 @@ from rclpy.time import Time
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from route_contract import (
+    ROUTE_FORMAT,
+    ROUTE_FORMAT_V1,
+    map_id_matches,
+    map_metadata_from_occupancy,
+    normalize_map_metadata,
+)
 
-ROUTE_FORMAT = "pfa_online_slam_route/v2"
-ROUTE_FORMAT_V1 = "pfa_online_slam_route/v1"
+
 MAX_WAIT_SECONDS = 86400.0
 STEP_WAYPOINT = "waypoint"
 STEP_WAIT = "wait"
@@ -79,28 +86,53 @@ def _normalize_wait(raw, index):
     }
 
 
-def parse_route_data(data):
-    """Validate a route document and normalize it into an ordered step list.
+@dataclass(frozen=True)
+class RouteDocument:
+    frame: str
+    map_metadata: dict | None
+    steps: list
+
+
+def parse_route_document(data, require_map_identity=False):
+    """Validate a route document and return frame, map identity and steps.
 
     v1 documents (waypoints only) stay readable and are lifted into waypoint
-    steps so older saved routes keep working unchanged.
+    steps so older saved routes keep working unchanged.  New v2 map routes
+    must carry a map identity; odom routes must not pretend to have one.
     """
     if not isinstance(data, dict):
         raise ValueError("路线文件必须是 JSON 对象")
     frame = data.get("frame")
     if frame not in ("map", "odom"):
         raise ValueError("路线 frame 必须是 map 或 odom")
+
+    raw_map = data.get("map")
+    map_metadata = (
+        normalize_map_metadata(raw_map) if raw_map is not None else None
+    )
+    if frame == "odom" and map_metadata is not None:
+        raise ValueError("odom 路线不应携带地图身份")
+
     fmt = data.get("format")
-    if fmt == ROUTE_FORMAT_V1 or (
+    is_v1 = fmt == ROUTE_FORMAT_V1 or (
         fmt is None and "steps" not in data and "waypoints" in data
-    ):
+    )
+    if frame == "map" and require_map_identity:
+        if map_metadata is None:
+            raise ValueError("map 路线缺少地图身份 map_id")
+
+    if is_v1:
         raw_waypoints = data.get("waypoints")
         if not isinstance(raw_waypoints, list) or not raw_waypoints:
             raise ValueError("路线 waypoints 必须是非空数组")
-        return frame, [
-            _normalize_waypoint(raw, index)
-            for index, raw in enumerate(raw_waypoints, start=1)
-        ]
+        return RouteDocument(
+            frame,
+            map_metadata,
+            [
+                _normalize_waypoint(raw, index)
+                for index, raw in enumerate(raw_waypoints, start=1)
+            ],
+        )
     if fmt != ROUTE_FORMAT:
         raise ValueError(f"路线 format 必须是 {ROUTE_FORMAT} 或 {ROUTE_FORMAT_V1}")
     raw_steps = data.get("steps")
@@ -119,7 +151,13 @@ def parse_route_data(data):
             raise ValueError(f"路线第 {index} 项 type 必须是 waypoint 或 wait")
     if not any(step["type"] == STEP_WAYPOINT for step in steps):
         raise ValueError("路线至少需要一个导航点")
-    return frame, steps
+    return RouteDocument(frame, map_metadata, steps)
+
+
+def parse_route_data(data):
+    """Backward-compatible wrapper returning ``(frame, steps)``."""
+    document = parse_route_document(data)
+    return document.frame, document.steps
 
 
 class OnlineSlamGoal(Node):
@@ -137,6 +175,7 @@ class OnlineSlamGoal(Node):
         start_mode="immediate",
         game_status_topic="/referee/game_status",
         route_steps=None,
+        route_map_id=None,
         record_only=False,
         auto_aim_topic="/auto_aim_enable",
         auto_aim_gate=True,
@@ -152,6 +191,7 @@ class OnlineSlamGoal(Node):
         self.start_allowed = start_mode == "immediate"
         self.game_status_topic = game_status_topic
         self.route_steps = list(route_steps or [])
+        self.route_map_id = route_map_id
         self.route_index = -1
         self.record_only = bool(record_only)
         self.current_goal_name = None
@@ -167,6 +207,7 @@ class OnlineSlamGoal(Node):
         self.map_frame = map_frame
         self.base_frame = base_frame
         self.latest_map = None
+        self.current_map_id = None
         self.goal_sent = False
         self.finished = False
         self.active_goal_uuid = None
@@ -257,6 +298,13 @@ class OnlineSlamGoal(Node):
 
     def map_callback(self, msg):
         self.latest_map = msg
+        try:
+            self.current_map_id = map_metadata_from_occupancy(
+                msg.info, msg.data
+            )["map_id"]
+        except (TypeError, ValueError) as exc:
+            self.current_map_id = None
+            self.get_logger().warn(f"无法计算 /map 身份: {exc}")
 
     def game_status_callback(self, msg):
         if self.start_allowed:
@@ -268,13 +316,28 @@ class OnlineSlamGoal(Node):
     def click_callback(self, msg):
         if self.goal_x is not None and self.goal_y is not None:
             return
+        if not msg.header.frame_id:
+            self.get_logger().error(
+                "点击消息没有 frame_id，无法确认坐标系；本次点击已拒绝"
+            )
+            return
+        if msg.header.frame_id != self.goal_frame:
+            self.get_logger().error(
+                f"点击消息 frame={msg.header.frame_id}，"
+                f"但录点 frame={self.goal_frame}；本次点击已拒绝。"
+                "请把 RViz Fixed Frame 调整为录点坐标系"
+            )
+            return
+        if self.goal_frame == "map" and (
+            self.latest_map is None or self.current_map_id is None
+        ):
+            self.get_logger().error(
+                "尚未收到有效的 /map 身份，无法绑定地图；本次 map 录点已拒绝"
+            )
+            return
+
         self.goal_x = float(msg.point.x)
         self.goal_y = float(msg.point.y)
-        if msg.header.frame_id and msg.header.frame_id != self.goal_frame:
-            self.get_logger().warn(
-                f"点击消息 frame={msg.header.frame_id}，但命令行 goal-frame={self.goal_frame}；"
-                "将按命令行指定坐标系处理"
-            )
         self.get_logger().info(
             f"已记录 RViz 点击目标: ({self.goal_x:.3f}, {self.goal_y:.3f}) "
             f"frame={self.goal_frame}"
@@ -292,6 +355,22 @@ class OnlineSlamGoal(Node):
             "y": self.goal_y,
             "yaw": self.goal_yaw,
         }
+        if self.goal_frame == "map":
+            if self.latest_map is None:
+                data["map"] = None
+                self.get_logger().warn(
+                    "保存 map 点时还没有 /map；该点缺少 map_id，路线不会接受"
+                )
+            else:
+                try:
+                    data["map"] = map_metadata_from_occupancy(
+                        self.latest_map.info, self.latest_map.data
+                    )
+                except (TypeError, ValueError) as exc:
+                    data["map"] = None
+                    self.get_logger().error(
+                        f"无法生成地图身份，保存点不可用于 map 路线: {exc}"
+                    )
         try:
             self.goal_file.parent.mkdir(parents=True, exist_ok=True)
             self.goal_file.write_text(
@@ -470,6 +549,22 @@ class OnlineSlamGoal(Node):
             if int(elapsed) % 5 == 0:
                 self.get_logger().info("等待 /map 发布...")
             return
+        if self.route_map_id:
+            if self.current_map_id is None:
+                if int(elapsed) % 5 == 0:
+                    self.get_logger().info("等待 /map 身份计算...")
+                return
+            if not map_id_matches(
+                {"map_id": self.current_map_id},
+                {"map_id": self.route_map_id},
+            ):
+                self.get_logger().error(
+                    "路线地图身份不匹配："
+                    f"route={self.route_map_id}, current={self.current_map_id}；"
+                    "拒绝执行，请重新录制或加载匹配地图"
+                )
+                self.finished = True
+                return
         goal = self.goal_in_map()
         if goal is None:
             if int(elapsed) % 5 == 0:
@@ -738,6 +833,7 @@ def main():
 
     saved_goal = None
     route_steps = None
+    route_map_id = None
     if args.use_saved_goal:
         try:
             saved_goal = json.loads(
@@ -753,13 +849,24 @@ def main():
         args.y = float(saved_goal["y"])
         args.yaw = float(saved_goal.get("yaw", 0.0))
         args.goal_frame = saved_goal["frame"]
+        if args.goal_frame == "map" and saved_goal.get("map") is not None:
+            try:
+                route_map_id = normalize_map_metadata(saved_goal["map"])["map_id"]
+            except ValueError as exc:
+                parser.error(f"目标文件地图身份无效: {exc}")
         args.wait_click = False
     elif args.use_saved_route:
         try:
             route_data = json.loads(
                 Path(args.route_file).expanduser().read_text(encoding="utf-8")
             )
-            args.goal_frame, route_steps = parse_route_data(route_data)
+            route_document = parse_route_document(
+                route_data, require_map_identity=True
+            )
+            args.goal_frame = route_document.frame
+            route_steps = route_document.steps
+            if route_document.map_metadata is not None:
+                route_map_id = route_document.map_metadata["map_id"]
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             parser.error(f"读取路线文件失败 {args.route_file}: {exc}")
         first = next(
@@ -772,8 +879,8 @@ def main():
     if args.wait_click:
         if args.x is not None or args.y is not None:
             parser.error("--wait-click 不能与 --x/--y 同时使用")
-        if args.goal_frame != "odom":
-            parser.error("--wait-click 模式请使用 --goal-frame odom，并将 RViz Fixed Frame 设为 odom")
+        if args.goal_frame not in ("map", "odom"):
+            parser.error("--wait-click 的 --goal-frame 必须是 map 或 odom")
         if args.record_only and args.no_save:
             parser.error("--record-only 不能与 --no-save 同时使用")
     elif args.x is None or args.y is None:
@@ -795,6 +902,7 @@ def main():
         start_mode=args.start_mode,
         game_status_topic=args.game_status_topic,
         route_steps=route_steps,
+        route_map_id=route_map_id,
         record_only=args.record_only,
         auto_aim_topic=args.auto_aim_topic,
         auto_aim_gate=not args.no_auto_aim_gate,

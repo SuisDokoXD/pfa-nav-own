@@ -19,6 +19,12 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
+from route_contract import (
+    ROUTE_FORMAT,
+    normalize_map_metadata,
+    yaml_map_header,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SIMULATION_GOAL_DIR = PROJECT_ROOT / "online_slam_goals" / "simulation"
@@ -28,8 +34,6 @@ ENVIRONMENT_DEFAULTS = {
     "reality": {"namespace": "", "use_sim_time": False, "goal_dir": REALITY_GOAL_DIR},
 }
 CORE_SCRIPT = Path(__file__).resolve().with_name("online_slam_goal.py")
-ROUTE_FORMAT = "pfa_online_slam_route/v2"
-ROUTE_FORMAT_V1 = "pfa_online_slam_route/v1"
 
 
 def safe_name(value):
@@ -42,9 +46,14 @@ def build_route_payload(name, items):
 
     ``items`` entries are ``{"type": "waypoint", "path": Path}`` or
     ``{"type": "wait", "seconds": float, "auto_aim": bool}``.
+
+    A route recorded in the ``map`` frame must carry the identity of the map
+    it was recorded against.  Odom routes deliberately carry no map identity:
+    they are session-local data and must not be exported as auto_nav YAML.
     """
     steps = []
     route_frame = None
+    route_map = None
     for item in items:
         if item["type"] == "wait":
             seconds = float(item["seconds"])
@@ -70,6 +79,22 @@ def build_route_payload(name, items):
             route_frame = frame
         elif frame != route_frame:
             raise ValueError("同一条路线不能混用 map 与 odom 坐标点")
+
+        if frame == "map":
+            raw_map = data.get("map")
+            if raw_map is None:
+                raise ValueError(
+                    f"{path.name} 是 map 点但缺少地图身份 map_id；"
+                    "请等待 /map 可用后重新录点"
+                )
+            point_map = normalize_map_metadata(raw_map)
+            if route_map is None:
+                route_map = point_map
+            elif route_map["map_id"] != point_map["map_id"]:
+                raise ValueError("同一条路线不能混用不同地图的点")
+        elif data.get("map") is not None:
+            raise ValueError(f"{path.name} 是 odom 点，不应携带地图身份")
+
         x = float(data["x"])
         y = float(data["y"])
         yaw = float(data.get("yaw", 0.0))
@@ -86,12 +111,17 @@ def build_route_payload(name, items):
         )
     if not any(step["type"] == "waypoint" for step in steps):
         raise ValueError("路线至少需要一个导航点")
-    return {
+    payload = {
         "format": ROUTE_FORMAT,
         "name": name,
         "frame": route_frame,
         "steps": steps,
     }
+    if route_frame == "map":
+        if route_map is None:
+            raise ValueError("map 路线缺少地图身份 map_id")
+        payload["map"] = route_map
+    return payload
 
 
 def format_number(value):
@@ -100,17 +130,25 @@ def format_number(value):
     return "0" if text in ("-0", "-0.0") else text
 
 
-def build_waypoints_yaml(points, source=None):
-    """Render route points as the Waypoints_Num yaml read by the auto_nav scripts."""
+def build_waypoints_yaml(points, frame="map", map_metadata=None, source=None):
+    """Render a map-frame route as the Waypoints_Num YAML read by auto_nav.
+
+    Odom routes are intentionally rejected: their coordinates are session-local
+    and must not be consumed as persistent map coordinates.
+    """
+    if frame != "map":
+        raise ValueError("只有 map 帧路线可以导出 auto_nav YAML；odom 路线请保留 JSON")
+    if map_metadata is None:
+        raise ValueError("map 路线缺少地图身份 map_id")
+    metadata = normalize_map_metadata(map_metadata)
     lines = [
         "# 由 online_slam_goal_gui.py 自动生成，可直接被 auto_nav 系列脚本用 --yaml 读取",
     ]
     if source:
         lines.append(f"# 来源: {source}")
-    lines.append(
-        "# 坐标按记录时的 frame 原样写入；auto_nav_su.py 按 map 帧使用，跨帧需自行对齐"
-    )
+    lines.append("# 本文件只允许 map 帧；Map.map_id 必须与执行时 /map 一致")
     lines.append("# 等待块只存在于路线 JSON，本 yaml 仅包含导航点")
+    lines.extend(yaml_map_header(frame, metadata))
     lines.append(f"Waypoints_Num: {len(points)}")
     for index, point in enumerate(points, 1):
         yaw = float(point.get("yaw", 0.0))
@@ -131,9 +169,19 @@ def build_waypoints_yaml(points, source=None):
     return "\n".join(lines) + "\n"
 
 
-def write_waypoints_yaml(path, points, source=None):
-    """Write the auto_nav waypoint yaml next to the route JSON."""
-    path.write_text(build_waypoints_yaml(points, source), encoding="utf-8")
+def write_waypoints_yaml(
+    path, points, frame="map", map_metadata=None, source=None
+):
+    """Write the auto_nav waypoint YAML next to the route JSON."""
+    path.write_text(
+        build_waypoints_yaml(
+            points,
+            frame=frame,
+            map_metadata=map_metadata,
+            source=source,
+        ),
+        encoding="utf-8",
+    )
     return path
 
 
@@ -148,6 +196,7 @@ class GoalLauncher:
         start_mode,
         game_status_topic,
         confirm_before_start,
+        record_frame="odom",
     ):
         self.root = root
         self.namespace = namespace.strip("/")
@@ -157,6 +206,7 @@ class GoalLauncher:
         self.start_mode = start_mode
         self.game_status_topic = game_status_topic
         self.confirm_before_start = bool(confirm_before_start)
+        self.record_frame = record_frame
         self.goal_dir.mkdir(parents=True, exist_ok=True)
         self.route_dir = self.goal_dir / "routes"
         self.route_dir.mkdir(parents=True, exist_ok=True)
@@ -411,7 +461,7 @@ class GoalLauncher:
         core_args = [
             "--wait-click",
             "--goal-frame",
-            "odom",
+            self.record_frame,
             "--goal-file",
             str(pending),
         ]
@@ -420,8 +470,8 @@ class GoalLauncher:
         self.start_core(core_args)
         self.status.config(
             text=(
-                "请在 RViz 使用 Publish Point 点击位置（可以位于灰色地图范围外），"
-                "点击后会弹出命名窗口。"
+                f"录点坐标系：{self.record_frame}。请在 RViz 使用 Publish Point 点击位置"
+                "（可以位于灰色地图范围外），点击后会弹出命名窗口。"
             )
         )
         self.root.after(400, self.watch_pending_goal)
@@ -705,32 +755,41 @@ class GoalLauncher:
             except OSError as exc:
                 messagebox.showerror("路线保存失败", str(exc), parent=dialog)
                 return
-            yaml_target = target.with_suffix(".yaml")
             waypoints = [
                 step for step in payload["steps"] if step["type"] == "waypoint"
             ]
             waits = [step for step in payload["steps"] if step["type"] == "wait"]
+            frame = payload["frame"]
+            if frame != "map":
+                self.status.config(
+                    text=(
+                        f"已保存 JSON：routes/{target.name}。"
+                        "odom 路线只属于当前会话，不导出 auto_nav YAML；"
+                        "A1 临时路线尚未实现。"
+                    )
+                )
+                dialog.destroy()
+                return
+
+            yaml_target = target.with_suffix(".yaml")
             try:
                 write_waypoints_yaml(
                     yaml_target,
                     waypoints,
-                    source=f"routes/{target.name} (frame={payload['frame']})",
+                    frame=frame,
+                    map_metadata=payload["map"],
+                    source=f"routes/{target.name} (frame={frame})",
                 )
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
                 messagebox.showerror(
                     "waypoints YAML 保存失败", str(exc), parent=dialog
                 )
                 return
-            frame_hint = (
-                "map 帧，可直接用于 auto_nav"
-                if payload["frame"] == "map"
-                else "odom 帧，需与地图对齐后使用"
-            )
             gated = sum(1 for step in waits if step["auto_aim"])
             self.status.config(
                 text=(
                     f"已保存路线：routes/{target.name} + {yaml_target.name}"
-                    f"（{frame_hint}，{len(waypoints)} 个点，{len(waits)} 个等待块，"
+                    f"（map 帧，{len(waypoints)} 个点，{len(waits)} 个等待块，"
                     f"其中 {gated} 个允许自瞄）"
                 )
             )
@@ -772,6 +831,15 @@ def main():
         "--confirm-before-start",
         action="store_true",
         help="启动目标节点前弹出实车移动安全确认",
+    )
+    parser.add_argument(
+        "--record-frame",
+        choices=("map", "odom"),
+        default="odom",
+        help=(
+            "录点坐标系；odom 仅保存 JSON，不导出 auto_nav YAML。"
+            "录制持久路线时使用 map，并把 RViz Fixed Frame 设为 map"
+        ),
     )
     parser.add_argument(
         "--goal-dir",
@@ -834,6 +902,7 @@ def main():
         start_mode=args.start_mode,
         game_status_topic=args.game_status_topic,
         confirm_before_start=args.confirm_before_start,
+        record_frame=args.record_frame,
     )
     if args.auto_goal:
         root.after(150, lambda: launcher.start_saved_goal_by_name(args.auto_goal))
