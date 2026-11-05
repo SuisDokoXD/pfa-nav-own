@@ -11,6 +11,7 @@ Environment=WORKSPACE=__WORKSPACE__
 Environment=ROS_LOG_DIR=__WORKSPACE__/log/ros
 Environment=NAMESPACE=
 Environment=USE_RVIZ=False
+Environment=PYTHONPYCACHEPREFIX=/home/%u/.cache/pfa-pycache
 EnvironmentFile=-/etc/default/pfa-navigation
 ExecStart=__WORKSPACE__/autostart_navigation/start_navigation.sh
 Restart=on-failure

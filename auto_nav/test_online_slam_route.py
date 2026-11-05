@@ -344,9 +344,6 @@ class GuiStopTest(unittest.TestCase):
         child.poll.side_effect = [None, None, 0]
         launcher = GoalLauncher.__new__(GoalLauncher)
         launcher.child = child
-        launcher.score_child = None
-        launcher.score_result_file = None
-        launcher.score_report_file = None
 
         launcher.stop_child()
 

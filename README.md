@@ -169,7 +169,8 @@ ros2 run nav2_map_server map_saver_cli -t /map -f "$PWD/game" --fmt pgm --mode t
 2.保存完成后再结束建图程序，等待日志出现 `Saved final 3D point cloud`，确认 point_lio 已写出 `src/pb2025_sentry_nav/point_lio/PCD/scans.pcd`。随后在工作空间根目录运行脚本，把实车地图和点云复制到导航默认读取的位置，保留原始输出：
 
 ```bash
-bash tools/map/prepare_reality_map.sh game --copy
+cd /home/pfa/sight/new/pfa-nav-own
+bash tools/map/prepare_reality_map.sh game --copy --force
 ```
 
 脚本会执行这些操作：

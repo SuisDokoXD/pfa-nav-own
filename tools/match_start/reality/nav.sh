@@ -12,6 +12,9 @@ USE_RVIZ="${USE_RVIZ:-False}"
 USE_ROBOT_STATE_PUB="${USE_ROBOT_STATE_PUB:-True}"
 ROS_LOG_DIR="${ROS_LOG_DIR:-$WORKSPACE/log/ros}"
 
+# Keep Python bytecode caches out of the repository tree.
+export PYTHONPYCACHEPREFIX="${PYTHONPYCACHEPREFIX:-${HOME:-/home/pfa}/.cache/pfa-pycache}"
+
 for required in "$SETUP_FILE" "$MAP_FILE" "$PCD_FILE"; do
   if [[ ! -f "$required" || ! -s "$required" ]]; then
     echo "ERROR: required navigation file is missing or empty: $required" >&2

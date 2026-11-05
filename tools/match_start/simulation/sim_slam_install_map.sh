@@ -20,6 +20,7 @@ ROS_LOG_DIR="${ROS_LOG_DIR:-$SCRIPT_DIR/log/ros}"
 GAZEBO_STARTUP_SECONDS="${GAZEBO_STARTUP_SECONDS:-8}"
 SESSION_ID="$(date +%Y%m%d_%H%M%S)"
 WORK_DIR="${WORK_DIR:-$SCRIPT_DIR/build/sim_slam_install/$SESSION_ID}"
+BACKUP_DIR="${PFA_BACKUP_DIR:-${HOME:-/home/pfa}/.cache/pfa-nav-backups}"
 
 if [[ $# -gt 0 && "$1" != *":="* ]]; then
   WORLD="$1"
@@ -87,7 +88,8 @@ source_ros() {
 backup_if_exists() {
   local path="$1"
   if [[ -e "$path" ]]; then
-    local backup="${path}.bak_${SESSION_ID}"
+    mkdir -p "$BACKUP_DIR"
+    local backup="$BACKUP_DIR/$(basename -- "$path").bak_${SESSION_ID}"
     mv "$path" "$backup"
     log "Backed up $path -> $backup"
   fi

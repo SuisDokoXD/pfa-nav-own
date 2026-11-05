@@ -1,0 +1,15 @@
+{
+  "yaml_path": "/home/pfa/sight/new/pfa-nav-own/src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/game.yaml",
+  "image_path": "/home/pfa/sight/new/pfa-nav-own/src/pb2025_sentry_nav/pb2025_nav_bringup/map/reality/game.pgm",
+  "resolution": 0.08,
+  "origin": [
+    -4.11,
+    -11.2,
+    0.0
+  ],
+  "width": 227,
+  "height": 255,
+  "image_sha256": "8991c5bd7cb0438df2badd0d64b78237b062c7b7e83b1d65dd18e24e77dc917e",
+  "format": "pfa_map_info/v1",
+  "map_id": "e550d6f1453e"
+}
