@@ -67,3 +67,11 @@ tools/map/backups/
 **/map/**/*.yaml
 # Runtime pending route state
 **/.pending_*.json
+
+# ======================================
+# Route data and waypoints (local only)
+# ======================================
+/online_slam_goals/**/*.json
+/online_slam_goals/**/*.yaml
+/online_slam_goals/**/*.yml
+/auto_nav/config/waypoints_*.yaml
