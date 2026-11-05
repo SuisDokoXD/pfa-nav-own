@@ -24,6 +24,14 @@ from route_contract import (
     normalize_map_metadata,
     yaml_map_header,
 )
+from route_session import (
+    cleanup_stale_sessions,
+    create_session,
+    finish_session,
+    is_session_route,
+    load_session,
+    validate_session_route,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -210,7 +218,10 @@ class GoalLauncher:
         self.goal_dir.mkdir(parents=True, exist_ok=True)
         self.route_dir = self.goal_dir / "routes"
         self.route_dir.mkdir(parents=True, exist_ok=True)
+        cleanup_stale_sessions()
+        self.session = create_session(kind="gui")
         self.child = None
+        self.last_child_returncode = None
         self.pending_file = None
         self.name_prompt_open = False
         self.closing = False
@@ -310,12 +321,16 @@ class GoalLauncher:
         if self.child.poll() is None:
             self.root.after(500, self.watch_navigation)
             return
+        self.last_child_returncode = self.child.returncode
         self.child = None
 
     def stop_child(self):
         child = self.child
         self.child = None
-        if child is None or child.poll() is not None:
+        if child is None:
+            return
+        if child.poll() is not None:
+            self.last_child_returncode = child.returncode
             return
 
         try:
@@ -333,6 +348,7 @@ class GoalLauncher:
             except subprocess.TimeoutExpired:
                 child.kill()
                 child.wait()
+        self.last_child_returncode = child.returncode
 
     def close(self):
         if self.closing:
@@ -342,6 +358,24 @@ class GoalLauncher:
         if self.pending_file is not None and self.pending_file.exists():
             self.pending_file.unlink()
         self.pending_file = None
+        try:
+            session = load_session(self.session.session_id)
+            if session is not None:
+                failed = session.manifest.get("status") == "failed"
+                finish_session(
+                    session,
+                    success=self.last_child_returncode in (None, 0) and not failed,
+                    diagnostics=None
+                    if failed
+                    else {
+                        "session_id": self.session.session_id,
+                        "returncode": self.last_child_returncode,
+                        "status": session.manifest.get("status"),
+                        "reason": "gui closed",
+                    },
+                )
+        except (OSError, ValueError):
+            pass
         self.root.destroy()
 
     def confirm_test_start(self):
@@ -366,11 +400,9 @@ class GoalLauncher:
         )
 
     def saved_route_files(self):
-        return sorted(
-            path
-            for path in self.route_dir.glob("*.json")
-            if not path.name.startswith(".")
-        )
+        paths = list(self.route_dir.glob("*.json"))
+        paths.extend(self.session.routes_dir.glob("*.json"))
+        return sorted(path for path in paths if not path.name.startswith("."))
 
     def find_saved_goal(self, name):
         requested = name.strip()
@@ -427,7 +459,16 @@ class GoalLauncher:
         if not self.confirm_test_start():
             self.status.config(text="已取消实车测试放行，未启动路线节点。")
             return False
-        self.start_core(["--use-saved-route", "--route-file", str(path)])
+        args = ["--use-saved-route", "--route-file", str(path)]
+        if is_session_route(path):
+            try:
+                validate_session_route(path, self.session.session_id)
+            except ValueError as exc:
+                messagebox.showerror("临时路线不可用", str(exc), parent=self.root)
+                self.status.config(text=f"临时路线不可用：{exc}")
+                return False
+            args.extend(["--session-id", self.session.session_id])
+        self.start_core(args)
         self.status.config(text=f"已使用路线：{path.name}，将按顺序逐点导航。")
         return True
 
@@ -742,7 +783,11 @@ class GoalLauncher:
                 messagebox.showerror("路线生成失败", str(exc), parent=dialog)
                 return
 
-            target = self.route_dir / f"{name}.json"
+            frame = payload["frame"]
+            if frame == "map":
+                target = self.route_dir / f"{name}.json"
+            else:
+                target = self.session.routes_dir / f"{name}.json"
             if target.exists() and not messagebox.askyesno(
                 "路线已存在", f"{target.name} 已存在，是否覆盖？", parent=dialog
             ):
@@ -759,13 +804,11 @@ class GoalLauncher:
                 step for step in payload["steps"] if step["type"] == "waypoint"
             ]
             waits = [step for step in payload["steps"] if step["type"] == "wait"]
-            frame = payload["frame"]
             if frame != "map":
                 self.status.config(
                     text=(
-                        f"已保存 JSON：routes/{target.name}。"
-                        "odom 路线只属于当前会话，不导出 auto_nav YAML；"
-                        "A1 临时路线尚未实现。"
+                        f"已保存临时路线：session {self.session.session_id} "
+                        f"routes/{target.name}。仅本次会话可用，不导出 auto_nav YAML。"
                     )
                 )
                 dialog.destroy()

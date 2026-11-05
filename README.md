@@ -118,7 +118,7 @@ ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py slam:=True use_ro
 ```
 
 (4)实车调试下通过传参使用已经保存的实车目标路线自动导航
-[小工具支持将多个已录制单点可视化排序并保存为 `pfa_online_slam_route/v2` 顺序路线。路线文件保存在对应环境的 `routes/` 子目录。只有 `map` 帧路线会导出 `auto_nav` YAML；`odom` 录点只保存 JSON，不会再生成可被误当 map 使用的 YAML。录制持久路线时使用 `--record-frame map`，并把 RViz Fixed Frame 设为 `map`；YAML 中的 `Map.map_id` 必须与执行时 `/map` 一致。]
+[小工具支持将多个已录制单点可视化排序并保存为 `pfa_online_slam_route/v2` 顺序路线。路线文件保存在对应环境的 `routes/` 子目录。只有 `map` 帧路线会导出 `auto_nav` YAML；`odom` 录点只保存 JSON，不会再生成可被误当 map 使用的 YAML。录制持久路线时使用 `--record-frame map`，并把 RViz Fixed Frame 设为 `map`；YAML 中的 `Map.map_id` 必须与执行时 `/map` 一致。A1 起，`odom` 临时路线保存在 `runtime/sessions/<session_id>/routes/`，只允许当前会话执行；GUI 正常关闭会清理，导航失败会保留 `diagnostics/` 并删除可执行路线。]
 
 ```bash
 ./auto_nav/start_reality_online_slam_nav.sh --test-mode --route <实车路线名称>

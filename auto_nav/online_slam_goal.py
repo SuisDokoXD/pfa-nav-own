@@ -35,6 +35,12 @@ from route_contract import (
     map_metadata_from_occupancy,
     normalize_map_metadata,
 )
+from route_session import (
+    is_session_route,
+    mark_status,
+    validate_session_route,
+    write_failure_diagnostics,
+)
 
 
 MAX_WAIT_SECONDS = 86400.0
@@ -176,6 +182,7 @@ class OnlineSlamGoal(Node):
         game_status_topic="/referee/game_status",
         route_steps=None,
         route_map_id=None,
+        session=None,
         record_only=False,
         auto_aim_topic="/auto_aim_enable",
         auto_aim_gate=True,
@@ -192,6 +199,7 @@ class OnlineSlamGoal(Node):
         self.game_status_topic = game_status_topic
         self.route_steps = list(route_steps or [])
         self.route_map_id = route_map_id
+        self.session = session
         self.route_index = -1
         self.record_only = bool(record_only)
         self.current_goal_name = None
@@ -530,13 +538,36 @@ class OnlineSlamGoal(Node):
         self.get_logger().info("停留结束，继续执行后续路线步骤")
         self.advance_route()
 
-    def finish_route(self):
+    def finish_route(self, success=True):
         self.in_dwell = False
         self.dwell_step = None
         self.dwell_until = None
         self.set_auto_aim(False)
         if self.route_steps:
-            self.get_logger().info("顺序巡航路线已全部完成")
+            if success:
+                self.get_logger().info("顺序巡航路线已全部完成")
+            else:
+                self.get_logger().error("顺序巡航路线失败结束，临时路线将失去执行资格")
+        if getattr(self, "session", None) is not None:
+            if success:
+                mark_status(self.session, "completed")
+            else:
+                write_failure_diagnostics(
+                    self.session,
+                    {
+                        "session_id": self.session.session_id,
+                        "status": "failed",
+                        "route_index": self.route_index,
+                        "goal": {
+                            "x": self.goal_x,
+                            "y": self.goal_y,
+                            "yaw": self.goal_yaw,
+                            "frame": self.goal_frame,
+                        },
+                        "map_id": self.route_map_id,
+                    },
+                )
+                mark_status(self.session, "failed")
         self.finished = True
 
     def try_send_goal(self):
@@ -563,7 +594,7 @@ class OnlineSlamGoal(Node):
                     f"route={self.route_map_id}, current={self.current_map_id}；"
                     "拒绝执行，请重新录制或加载匹配地图"
                 )
-                self.finished = True
+                self.finish_route(success=False)
                 return
         goal = self.goal_in_map()
         if goal is None:
@@ -654,11 +685,11 @@ class OnlineSlamGoal(Node):
                 )
             else:
                 self.get_logger().error(f"发送目标失败: {exc}")
-                self.finished = True
+                self.finish_route(success=False)
             return
         if not goal_handle.accepted:
             self.get_logger().error("Nav2 拒绝了目标")
-            self.finished = True
+            self.finish_route(success=False)
             return
         self.get_logger().info("Nav2 已接受目标，等待结果")
         result_future = goal_handle.get_result_async()
@@ -726,7 +757,7 @@ class OnlineSlamGoal(Node):
                 )
             else:
                 self.get_logger().error(f"读取导航结果失败: {exc}")
-                self.finished = True
+                self.finish_route(success=False)
             return
 
         self.complete_active_goal(status, "result")
@@ -748,7 +779,7 @@ class OnlineSlamGoal(Node):
             self.get_logger().error(
                 f"路线在第 {self.route_index + 1} 个步骤停止，不会跳过失败点"
             )
-        self.finish_route()
+        self.finish_route(success=(status == GoalStatus.STATUS_SUCCEEDED))
 
 
 def main():
@@ -795,6 +826,11 @@ def main():
         help="从 --route-file 加载路线，并按顺序逐点导航",
     )
     parser.add_argument(
+        "--session-id",
+        default=None,
+        help="临时路线所属的 runtime session；持久 map 路线不需要",
+    )
+    parser.add_argument(
         "--record-only",
         action="store_true",
         help="记录 RViz 点击并保存后退出，不发送导航目标",
@@ -834,6 +870,7 @@ def main():
     saved_goal = None
     route_steps = None
     route_map_id = None
+    session = None
     if args.use_saved_goal:
         try:
             saved_goal = json.loads(
@@ -867,6 +904,11 @@ def main():
             route_steps = route_document.steps
             if route_document.map_metadata is not None:
                 route_map_id = route_document.map_metadata["map_id"]
+            route_path = Path(args.route_file).expanduser().resolve()
+            if args.session_id:
+                session = validate_session_route(route_path, args.session_id)
+            elif is_session_route(route_path):
+                parser.error("临时路线必须提供 --session-id")
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             parser.error(f"读取路线文件失败 {args.route_file}: {exc}")
         first = next(
@@ -876,6 +918,8 @@ def main():
         args.y = first["y"]
         args.yaw = first["yaw"]
         args.wait_click = False
+    if args.session_id and not args.use_saved_route:
+        parser.error("--session-id 只能与 --use-saved-route 一起使用")
     if args.wait_click:
         if args.x is not None or args.y is not None:
             parser.error("--wait-click 不能与 --x/--y 同时使用")
@@ -903,6 +947,7 @@ def main():
         game_status_topic=args.game_status_topic,
         route_steps=route_steps,
         route_map_id=route_map_id,
+        session=session,
         record_only=args.record_only,
         auto_aim_topic=args.auto_aim_topic,
         auto_aim_gate=not args.no_auto_aim_gate,

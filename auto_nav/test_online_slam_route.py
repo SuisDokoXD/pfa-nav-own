@@ -18,6 +18,7 @@ from online_slam_goal import (
 )
 from online_slam_goal_gui import GoalLauncher, build_route_payload
 from auto_nav_su import AutoNavNode
+from route_session import create_session, load_session
 
 
 class FakeTime:
@@ -43,6 +44,8 @@ def make_node(steps, now=100.0):
     node = OnlineSlamGoal.__new__(OnlineSlamGoal)
     node.route_steps = steps
     node.route_index = -1
+    node.route_map_id = None
+    node.session = None
     node.goal_x = None
     node.goal_y = None
     node.goal_yaw = 0.0
@@ -368,6 +371,37 @@ class ShutdownGateTest(unittest.TestCase):
         self.assertFalse(node.auto_aim_allowed)
 
 
+class SessionLifecycleTest(unittest.TestCase):
+    def test_failed_route_marks_session_failed_and_keeps_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "sessions"
+            session = create_session(kind="test", root=root)
+            node = make_node(
+                [
+                    {
+                        "type": STEP_WAYPOINT,
+                        "name": "a1",
+                        "x": 1.0,
+                        "y": 2.0,
+                        "yaw": 0.0,
+                    }
+                ]
+            )
+            node.session = session
+            node.route_index = 0
+            node.goal_x = 1.0
+            node.goal_y = 2.0
+            node.goal_yaw = 0.0
+            node.goal_frame = "odom"
+            node.route_map_id = None
+
+            node.finish_route(success=False)
+
+            loaded = load_session(session.session_id, root=root)
+            self.assertEqual(loaded.manifest["status"], "failed")
+            self.assertTrue((loaded.diagnostics_dir / "failure.json").is_file())
+
+
 class WaypointYamlTest(unittest.TestCase):
     def make_node(self):
         node = AutoNavNode.__new__(AutoNavNode)
@@ -436,6 +470,24 @@ class WaypointYamlTest(unittest.TestCase):
         self.assertEqual(node.route_frame, "map")
         self.assertIsNone(node.route_map_id)
         self.assertTrue(any("没有 Route_Frame" in line for line in node.logs))
+
+    def test_session_yaml_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_yaml(
+                directory,
+                "Route_Format: pfa_online_slam_route/v2\n"
+                "Route_Frame: map\n"
+                "Session_ID: abc123\n"
+                "Map:\n"
+                "  map_id: map123\n"
+                "Waypoints_Num: 1\n"
+                "Waypoint_1:\n"
+                "  Pos_x: 1.0\n"
+                "  Pos_y: 2.0\n",
+            )
+            node = self.make_node()
+            with self.assertRaisesRegex(ValueError, "session 临时"):
+                node.load_waypoints(path)
 
 
 class GuiStopTest(unittest.TestCase):

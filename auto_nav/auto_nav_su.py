@@ -22,6 +22,7 @@ from route_contract import (
     map_metadata_from_occupancy,
     parse_yaml_map_header,
 )
+from route_session import is_session_route
 import yaml
 import argparse
 import time
@@ -763,6 +764,11 @@ class AutoNavNode(Node):
             data = yaml.safe_load(f)
         if not isinstance(data, dict):
             raise ValueError("航点 YAML 必须是对象")
+        if is_session_route(yaml_path) or "Session_ID" in data:
+            raise ValueError(
+                "auto_nav_su 不接受 session 临时 YAML；"
+                "临时路线只能由 online_slam_goal 在当前 session 执行"
+            )
         frame, map_metadata, legacy = parse_yaml_map_header(data)
         if legacy:
             frame = "map"
@@ -772,8 +778,8 @@ class AutoNavNode(Node):
             )
         if frame == "odom":
             raise ValueError(
-                "auto_nav_su 不接受 odom 帧 YAML；odom 路线请使用 JSON 执行器，"
-                "A1 临时路线尚未实现"
+                "auto_nav_su 不接受 odom 帧 YAML；"
+                "odom 临时路线只能由 online_slam_goal 在 session 内执行"
             )
         if frame != "map":
             raise ValueError("航点 YAML 的 Route_Frame 必须是 map")

@@ -75,3 +75,8 @@ tools/map/backups/
 /online_slam_goals/**/*.yaml
 /online_slam_goals/**/*.yml
 /auto_nav/config/waypoints_*.yaml
+
+# ======================================
+# Session-scoped temporary routes
+# ======================================
+/runtime/
