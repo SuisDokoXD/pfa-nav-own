@@ -142,8 +142,8 @@ def generate_launch_description():
 
     declare_world_cmd = DeclareLaunchArgument(
         "world",
-        default_value="rmul_2024",
-        description="Select world: 'rmul_2024' or 'rmuc_2024' (map file share the same name as the this parameter)",
+        default_value="game",
+        description="Select map/reality/<world>.yaml and pcd/reality/<world>.pcd; default game",
     )
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
