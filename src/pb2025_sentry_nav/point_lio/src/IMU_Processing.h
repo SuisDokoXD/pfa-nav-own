@@ -40,6 +40,9 @@ public:
   void set_gyr_cov(const V3D & scaler);
   void set_acc_cov(const V3D & scaler);
   void Set_init(Eigen::Vector3d & tmp_gravity, Eigen::Matrix3d & rot);
+  /// 只读返回初始化窗口内的陀螺均值，供重力参数自检判断静止性（阶段2）。
+  const V3D & mean_gyro() const { return mean_gyr; }
+
 
   MD(12, 12) state_cov = MD(12, 12)::Identity();
   int lidar_type;

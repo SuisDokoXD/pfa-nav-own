@@ -9,8 +9,14 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <filesystem>
+#include <cmath>
+#include <limits>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
+#include <diagnostic_msgs/msg/diagnostic_array.hpp>
+#include <diagnostic_msgs/msg/diagnostic_status.hpp>
+#include <diagnostic_msgs/msg/key_value.hpp>
+
 
 #include "li_initialization.h"
 
@@ -423,6 +429,17 @@ int main(int argc, char ** argv)
   auto pub_odom_aft_mapped =
     nh->create_publisher<nav_msgs::msg::Odometry>("aft_mapped_to_init", 20);
   auto pub_path = nh->create_publisher<nav_msgs::msg::Path>("path", 20);
+  // 重力参数一致性自检：只发布诊断，不修改任何参数或滤波器状态（阶段2）。
+  auto pub_gravity_diag =
+    nh->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
+  bool gravity_check_ready = false;
+  int gravity_check_level = diagnostic_msgs::msg::DiagnosticStatus::STALE;
+  string gravity_check_message = "重力自检尚未执行";
+  double gravity_check_angle_deg = std::numeric_limits<double>::quiet_NaN();
+  double gravity_check_acc_norm = std::numeric_limits<double>::quiet_NaN();
+  double gravity_check_gyr_norm = std::numeric_limits<double>::quiet_NaN();
+  double gravity_check_scale_ratio = std::numeric_limits<double>::quiet_NaN();
+  double gravity_check_last_pub = -1.0e9;
   auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(nh);
 
   //------------------------------------------------------------------------------------------------------
@@ -536,9 +553,108 @@ int main(int argc, char ** argv)
           // kf_input.x_.rot; //.normalize();
           // kf_output.x_.rot; //.normalize();
           kf_output.x_.acc = -rot_init.transpose() * kf_output.x_.gravity;
+
+          // ---- 重力参数一致性自检（只读：不修改 gravity / rot_init / EKF 状态）----
+          if (imu_en) {
+            V3D g_param;
+            g_param << VEC_FROM_ARRAY(gravity);
+            // 与上面 tmp_gravity 采用同一符号约定：重力方向 = -mean_acc
+            const V3D g_meas = -p_imu->mean_acc;
+            const double gn_p = g_param.norm();
+            const double gn_m = g_meas.norm();
+            gravity_check_gyr_norm = p_imu->mean_gyro().norm();
+            gravity_check_acc_norm = gn_m;
+            if (gn_p > 1e-6 && gn_m > 1e-6) {
+              double cos_angle = g_param.dot(g_meas) / (gn_p * gn_m);
+              cos_angle = std::min(1.0, std::max(-1.0, cos_angle));
+              gravity_check_angle_deg = std::acos(cos_angle) * 180.0 / M_PI;
+              // 注意：rot_init 与 x_.gravity 由同一套式子生成，二者恒自洽，
+              // 所以这里不做"初始化残差"——方向不一致只用夹角表示。
+              // 保留的第二个指标是加速度模长与参数模长的比例（单位/标度一致性）。
+            }
+            // 判据一：初始化窗口是否静止（陀螺均值）——运动中无法判定方向一致性
+            // 判据二：加速度模长与 gravity 模长的比例——偏差说明 acc_norm/单位不一致
+            const bool gyro_quiet = gravity_check_gyr_norm < 0.05;
+            const double norm_ratio =
+              (gn_p > 1e-6 && gn_m > 1e-6) ? gn_m * (G_m_s2 / acc_norm) / gn_p : 0.0;
+            const bool norm_matched = norm_ratio > 0.0 && std::fabs(norm_ratio - 1.0) < 0.05;
+            gravity_check_scale_ratio = norm_ratio;
+            if (!gyro_quiet) {
+              gravity_check_level = diagnostic_msgs::msg::DiagnosticStatus::STALE;
+              gravity_check_message =
+                "初始化窗口存在明显运动，无法判定 gravity 参数一致性";
+            } else if (!norm_matched) {
+              gravity_check_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+              gravity_check_message =
+                "加速度模长与 gravity 模长不成比例，请检查 acc_norm 单位约定与 gravity 模长";
+            } else if (gravity_check_angle_deg <= 3.0) {
+              gravity_check_level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+              gravity_check_message = "gravity 参数与实测重力方向一致";
+            } else if (gravity_check_angle_deg <= 10.0) {
+              gravity_check_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+              gravity_check_message =
+                "gravity 参数与实测重力方向相差较大，可能坡面起步或参数略旧";
+            } else {
+              gravity_check_level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+              gravity_check_message =
+                "gravity 参数与实测重力方向相差很大：若平地起步则参数需重测，若坡面起步可忽略";
+            }
+            gravity_check_ready = true;
+            if (gravity_check_level == diagnostic_msgs::msg::DiagnosticStatus::OK) {
+              RCLCPP_INFO(
+                LOGGER, "gravity self-check: OK, angle=%.2f deg, scale_ratio=%.4f",
+                gravity_check_angle_deg, gravity_check_scale_ratio);
+            } else if (gravity_check_level == diagnostic_msgs::msg::DiagnosticStatus::STALE) {
+              RCLCPP_INFO(
+                LOGGER, "gravity self-check: skipped (moving start), gyro=%.3f rad/s",
+                gravity_check_gyr_norm);
+            } else {
+              RCLCPP_WARN(
+                LOGGER, "gravity self-check: %s (angle=%.2f deg, scale_ratio=%.4f, gyro=%.3f rad/s)",
+                gravity_check_message.c_str(), gravity_check_angle_deg,
+                gravity_check_scale_ratio, gravity_check_gyr_norm);
+            }
+          }
         } else {
           continue;
         }
+      }
+
+      // 诊断 1 Hz 周期发布：保证初始化之后才启动的订阅者也能收到结果
+      if (gravity_check_ready && lidar_end_time - gravity_check_last_pub >= 1.0) {
+        diagnostic_msgs::msg::DiagnosticArray diag;
+        diag.header.stamp = nh->now();
+        diagnostic_msgs::msg::DiagnosticStatus status;
+        status.name = "point_lio/gravity_alignment";
+        status.hardware_id = "point_lio";
+        status.level = static_cast<uint8_t>(gravity_check_level);
+        status.message = gravity_check_message;
+        auto add_value = [&status](const string & key, double value) {
+          diagnostic_msgs::msg::KeyValue kv;
+          kv.key = key;
+          if (std::isfinite(value)) {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%.6f", value);
+            kv.value = buf;
+          } else {
+            kv.value = "nan";
+          }
+          status.values.push_back(kv);
+        };
+        add_value("gravity_angle_deg", gravity_check_angle_deg);
+        add_value("gravity_norm", gravity_check_acc_norm * (G_m_s2 / acc_norm));
+        add_value("gravity_expected_norm", G_m_s2);
+        add_value("acc_scale_ratio", gravity_check_scale_ratio);
+        add_value("gyro_norm", gravity_check_gyr_norm);
+        add_value("init_valid", gravity_check_level == 3 ? 0.0 : 1.0);
+        if (gravity.size() == 3) {
+          add_value("gravity_x", gravity[0]);
+          add_value("gravity_y", gravity[1]);
+          add_value("gravity_z", gravity[2]);
+        }
+        diag.status.push_back(status);
+        pub_gravity_diag->publish(diag);
+        gravity_check_last_pub = lidar_end_time;
       }
       /*** initialize the map ***/
       if (!init_map) {
