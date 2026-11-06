@@ -577,11 +577,15 @@ int main(int argc, char ** argv)
       t2 = omp_get_wtime();
 
       /*** iterated state estimation ***/
-      crossmat_list.reserve(feats_down_size);
-      pbody_list.reserve(feats_down_size);
-      // pbody_ext_list.reserve(feats_down_size);
+      // NOTE: 这两个容器只通过 operator[] 写入，reserve() 只改 capacity 不改 size()，
+      // 越界写是未定义行为。resize() 后 size() 与下面的循环上界一致；
+      // 尺寸不变时 resize() 不重新分配，开销与 reserve() 相同。
+      const size_t feats_body_size = feats_down_body->size();
+      crossmat_list.resize(feats_body_size);
+      pbody_list.resize(feats_body_size);
+      // pbody_ext_list.reserve(feats_body_size);
 
-      for (size_t i = 0; i < feats_down_body->size(); i++) {
+      for (size_t i = 0; i < feats_body_size; i++) {
         V3D point_this(
           feats_down_body->points[i].x, feats_down_body->points[i].y, feats_down_body->points[i].z);
         pbody_list[i] = point_this;

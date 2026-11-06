@@ -118,7 +118,9 @@ void h_model_input(
   pabcd.setZero();
   normvec->resize(time_seq[k]);
   int effect_num_k = 0;
-  for (int j = 0; j < time_seq[k]; j++) {
+  // 上界与 laserMapping.cpp 里的 resize 一致：越界即停止消耗本段点，不抛异常。
+  const int body_list_size = static_cast<int>(pbody_list.size());
+  for (int j = 0; j < time_seq[k] && idx + j + 1 < body_list_size; j++) {
     PointType & point_body_j = feats_down_body->points[idx + j + 1];
     PointType & point_world_j = feats_down_world->points[idx + j + 1];
     pointBodyToWorld(&point_body_j, &point_world_j);
@@ -181,7 +183,7 @@ void h_model_input(
   ekfom_data.z.resize(effect_num_k);
   int m = 0;
 
-  for (int j = 0; j < time_seq[k]; j++) {
+  for (int j = 0; j < time_seq[k] && idx + j + 1 < body_list_size; j++) {
     // ekfom_data.converge = false;
     if (point_selected_surf[idx + j + 1]) {
       V3D norm_vec(normvec->points[j].x, normvec->points[j].y, normvec->points[j].z);
@@ -224,7 +226,8 @@ void h_model_output(
   pabcd.setZero();
   normvec->resize(time_seq[k]);
   int effect_num_k = 0;
-  for (int j = 0; j < time_seq[k]; j++) {
+  const int body_list_size = static_cast<int>(pbody_list.size());
+  for (int j = 0; j < time_seq[k] && idx + j + 1 < body_list_size; j++) {
     PointType & point_body_j = feats_down_body->points[idx + j + 1];
     PointType & point_world_j = feats_down_world->points[idx + j + 1];
     pointBodyToWorld(&point_body_j, &point_world_j);
@@ -288,7 +291,7 @@ void h_model_output(
   ekfom_data.h_x = Eigen::MatrixXd::Zero(effect_num_k, 12);
   ekfom_data.z.resize(effect_num_k);
   int m = 0;
-  for (int j = 0; j < time_seq[k]; j++) {
+  for (int j = 0; j < time_seq[k] && idx + j + 1 < body_list_size; j++) {
     // ekfom_data.converge = false;
     if (point_selected_surf[idx + j + 1]) {
       V3D norm_vec(normvec->points[j].x, normvec->points[j].y, normvec->points[j].z);
