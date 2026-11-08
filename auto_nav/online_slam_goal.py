@@ -24,6 +24,7 @@ from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from rclpy.time import Time
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -226,8 +227,13 @@ class OnlineSlamGoal(Node):
         self.active_goal_wait_warning_sent = False
         self.start_time = self.get_clock().now()
 
+        # /map 是 latched(transient_local) 话题：用默认 volatile 订阅会漏掉
+        # “订阅之前就已发布”的地图，导致 map 帧录点永远拿不到 map_id。
+        map_qos = QoSProfile(depth=1)
+        map_qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
+        map_qos.reliability = QoSReliabilityPolicy.RELIABLE
         self.map_sub = self.create_subscription(
-            OccupancyGrid, "map", self.map_callback, 10
+            OccupancyGrid, "map", self.map_callback, map_qos
         )
         self.game_status_sub = None
         self.game_status_type = None
