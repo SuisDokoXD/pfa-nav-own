@@ -365,21 +365,23 @@ class OnlineSlamGoal(Node):
             "yaw": self.goal_yaw,
         }
         if self.goal_frame == "map":
+            metadata = None
             if self.latest_map is None:
-                data["map"] = None
-                self.get_logger().warn(
-                    "保存 map 点时还没有 /map；该点缺少 map_id，路线不会接受"
+                self.get_logger().error(
+                    "录点为 map 帧但还没有 /map，已拒绝保存（避免生成无 map_id 的坏点）；"
+                    "请确认地图已加载且 RViz Fixed Frame 为 map 后重试"
                 )
             else:
                 try:
-                    data["map"] = map_metadata_from_occupancy(
+                    metadata = map_metadata_from_occupancy(
                         self.latest_map.info, self.latest_map.data
                     )
                 except (TypeError, ValueError) as exc:
-                    data["map"] = None
-                    self.get_logger().error(
-                        f"无法生成地图身份，保存点不可用于 map 路线: {exc}"
-                    )
+                    self.get_logger().error(f"无法生成地图身份，已拒绝保存: {exc}")
+            if metadata is None:
+                self.finished = True
+                return
+            data["map"] = metadata
         try:
             self.goal_file.parent.mkdir(parents=True, exist_ok=True)
             self.goal_file.write_text(

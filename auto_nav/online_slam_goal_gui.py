@@ -205,7 +205,7 @@ class GoalLauncher:
         start_mode,
         game_status_topic,
         confirm_before_start,
-        record_frame="odom",
+        record_frame="map",
     ):
         self.root = root
         self.namespace = namespace.strip("/")
@@ -912,10 +912,10 @@ def main():
     parser.add_argument(
         "--record-frame",
         choices=("map", "odom"),
-        default="odom",
+        default="map",
         help=(
-            "录点坐标系；odom 仅保存 JSON，不导出 auto_nav YAML。"
-            "录制持久路线时使用 map，并把 RViz Fixed Frame 设为 map"
+            "录点坐标系；map 会绑定地图身份 map_id，可跨会话/先验导航复用；"
+            "odom 为临时点，仅当前会话有效且不导出 auto_nav YAML"
         ),
     )
     parser.add_argument(
