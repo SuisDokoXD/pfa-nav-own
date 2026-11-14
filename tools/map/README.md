@@ -42,11 +42,43 @@ python3 auto_nav/online_slam_goal_gui.py --record-frame map
 3. **地图一旦修改，旧点作废**：调平、改 origin、替换图片都会改变 `map_id`。
 
 ## 验收（建议每次换图都做一遍）
-
 1. `annotate_map.sh` + GUI 记一个点；
 2. 关闭后按**先验图定位模式**启动，加载同一张 `site.yaml`；
 3. GUI 能打开该点、不报 `map_id` 不一致 → 通过；
 4. 实车发一次目标，确认到点。
+
+## 建图会话的 odom 点 → map 点（转换）
+
+建图时 GUI 录的是 **odom 临时点**（`runtime/sessions/<session_id>/points/`）。地图定稿后，
+用转换脚本把它们变成带 `map_id` 的 map 点：
+
+```bash
+# 1) 先只起最终地图（提供权威 /map）
+tools/map/annotate_map.sh --map /绝对路径/game.yaml
+
+# 2) 另开终端转换（默认输出到 online_slam_goals/reality/，离线 GUI 直接可见）
+python3 tools/map/convert_session_points.py --session-id <session_id>
+```
+
+- `--map-odom "dx dy dyaw_deg"`：建图会话的 `map→odom`；SLAM 模式恒等，填 `0 0 0`（默认）。
+- `--out DIR`：改输出目录；`--force`：允许覆盖同名点（默认不覆盖）。
+- 只处理 `frame=="odom"` 的点，已是 map 的点会被跳过。
+- 输出里带 `source.session_id`，便于回溯来源。
+
+> ⚠️ 当前实现下，GUI **正常关闭**会删除该会话的 `points/`（`route_session.finish_session`），
+> 所以转换必须在 GUI 关闭**之前**完成。若要"关掉再转换"，需要改成关闭时保留 points。
+
+### 目录结构（实车）
+
+```
+online_slam_goals/reality/
+├── <point_name>.json        # map 点（离线 GUI 录的 或 转换出来的，平铺）
+└── routes/
+    ├── <route_name>.json    # 路线（v2）
+    └── <route_name>.yaml    # map 路线额外导出的 auto_nav 航点（含 Map.map_id）
+```
+
+
 
 ## 常见问题
 
