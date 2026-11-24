@@ -217,7 +217,7 @@ def generate_launch_description():
 
     declare_auto_save_pcd_interval_cmd = DeclareLaunchArgument(
         "auto_save_pcd_interval",
-        default_value="300",
+        default_value="240",
         description="Number of LiDAR frames between point_lio accumulated PCD snapshots.",
     )
 

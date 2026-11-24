@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <world name="default">
+    <physics name="default_physics" type="ode">
+      <max_step_size>0.01</max_step_size>
+      <real_time_update_rate>100</real_time_update_rate>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="libignition-gazebo-physics-system.so" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so" name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="libignition-gazebo-user-commands-system.so" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="libignition-gazebo-sensors-system.so" name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="libignition-gazebo-imu-system.so" name="ignition::gazebo::systems::Imu"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.4 0.2 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <material><ambient>0.72 0.72 0.72 1</ambient><diffuse>0.72 0.72 0.72 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Dumbbell: two enclosed 6.0 x 6.0 m rooms (A on the left, B on the right)
+         joined by a single 3.0 m long horizontal corridor. The corridor is the only
+         passage and carries its own roof, so the gap it forms reads as an opening.
+         Opening clear width 0.533 m = sentry full width incl. wheels 0.433 m + 100 mm;
+         clear height 0.544 m = sentry highest point 0.534 m + 10 mm. Wall thickness
+         0.2 m, wall height 2.5 m, ground at z=0. The corridor keeps its own roof. -->
+    <!-- 洞口净宽 0.533 m = 哨兵含轮全宽 0.433 m + 100 mm；净高 0.544 m = 哨兵最高点 0.534 m + 10 mm；
+         墙厚 0.2 m，墙高 2.5 m（z=0 到 z=2.5），房间内部 6.0 x 6.0 m，通道长 3.0 m。 -->
+    <!-- 配色约定（便于仿真测试时辨认空间）：
+         蓝灰 = 房间A 及其洞口墙段 | 青绿 = 房间B 及其洞口墙段
+         亮橙 = 通道两侧洞壁       | 紫红 = 顶棚与洞口过梁
+         地面保持中性灰 -->
+
+    <!-- 房间A 西外墙 -->
+    <model name="a_west"><static>true</static><pose>-7.6 0 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 6.4 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 6.4 2.5</size></box></geometry><material><ambient>0.13 0.16 0.22 1</ambient><diffuse>0.28 0.36 0.48 1</diffuse><specular>0.10 0.10 0.12 1</specular></material></visual></link></model>
+    <!-- 房间A 北外墙 -->
+    <model name="a_north"><static>true</static><pose>-4.6 3.1 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>6.2 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>6.2 0.2 2.5</size></box></geometry><material><ambient>0.13 0.16 0.22 1</ambient><diffuse>0.28 0.36 0.48 1</diffuse><specular>0.10 0.10 0.12 1</specular></material></visual></link></model>
+    <!-- 房间A 南外墙 -->
+    <model name="a_south"><static>true</static><pose>-4.6 -3.1 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>6.2 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>6.2 0.2 2.5</size></box></geometry><material><ambient>0.13 0.16 0.22 1</ambient><diffuse>0.28 0.36 0.48 1</diffuse><specular>0.10 0.10 0.12 1</specular></material></visual></link></model>
+    <!-- 房间A 东墙 洞口南侧 -->
+    <model name="a_east_south"><static>true</static><pose>-1.6 -1.73325 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry><material><ambient>0.13 0.16 0.22 1</ambient><diffuse>0.28 0.36 0.48 1</diffuse><specular>0.10 0.10 0.12 1</specular></material></visual></link></model>
+    <!-- 房间A 东墙 洞口北侧 -->
+    <model name="a_east_north"><static>true</static><pose>-1.6 1.73325 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry><material><ambient>0.13 0.16 0.22 1</ambient><diffuse>0.28 0.36 0.48 1</diffuse><specular>0.10 0.10 0.12 1</specular></material></visual></link></model>
+    <!-- 房间A 东墙 洞口上方过梁（门下沿 z=0.544，上沿 z=2.5） -->
+    <model name="a_east_header"><static>true</static><pose>-1.6 0 1.522 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 0.533 1.956</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 0.533 1.956</size></box></geometry><material><ambient>0.20 0.08 0.16 1</ambient><diffuse>0.52 0.24 0.44 1</diffuse><specular>0.12 0.08 0.10 1</specular></material></visual></link></model>
+
+    <!-- 通道C 南侧墙 -->
+    <model name="c_south"><static>true</static><pose>0 -0.3665 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>3.0 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>3.0 0.2 2.5</size></box></geometry><material><ambient>0.34 0.18 0.05 1</ambient><diffuse>0.85 0.48 0.16 1</diffuse><specular>0.15 0.10 0.05 1</specular></material></visual></link></model>
+    <!-- 通道C 北侧墙 -->
+    <model name="c_north"><static>true</static><pose>0 0.3665 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>3.0 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>3.0 0.2 2.5</size></box></geometry><material><ambient>0.34 0.18 0.05 1</ambient><diffuse>0.85 0.48 0.16 1</diffuse><specular>0.15 0.10 0.05 1</specular></material></visual></link></model>
+    <!-- 通道C 顶棚（下沿 z=0.544，上沿 z=2.5） -->
+    <model name="c_roof"><static>true</static><pose>0 0 1.522 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>3.0 0.533 1.956</size></box></geometry></collision><visual name="visual"><geometry><box><size>3.0 0.533 1.956</size></box></geometry><material><ambient>0.20 0.08 0.16 1</ambient><diffuse>0.52 0.24 0.44 1</diffuse><specular>0.12 0.08 0.10 1</specular></material></visual></link></model>
+
+    <!-- 房间B 东外墙（实心，无洞） -->
+    <model name="b_east"><static>true</static><pose>7.6 0 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 6.4 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 6.4 2.5</size></box></geometry><material><ambient>0.11 0.19 0.17 1</ambient><diffuse>0.26 0.44 0.40 1</diffuse><specular>0.10 0.12 0.10 1</specular></material></visual></link></model>
+    <!-- 房间B 北外墙 -->
+    <model name="b_north"><static>true</static><pose>4.6 3.1 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>6.2 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>6.2 0.2 2.5</size></box></geometry><material><ambient>0.11 0.19 0.17 1</ambient><diffuse>0.26 0.44 0.40 1</diffuse><specular>0.10 0.12 0.10 1</specular></material></visual></link></model>
+    <!-- 房间B 南外墙 -->
+    <model name="b_south"><static>true</static><pose>4.6 -3.1 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>6.2 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>6.2 0.2 2.5</size></box></geometry><material><ambient>0.11 0.19 0.17 1</ambient><diffuse>0.26 0.44 0.40 1</diffuse><specular>0.10 0.12 0.10 1</specular></material></visual></link></model>
+    <!-- 房间B 西墙 洞口南侧 -->
+    <model name="b_west_south"><static>true</static><pose>1.6 -1.73325 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry><material><ambient>0.11 0.19 0.17 1</ambient><diffuse>0.26 0.44 0.40 1</diffuse><specular>0.10 0.12 0.10 1</specular></material></visual></link></model>
+    <!-- 房间B 西墙 洞口北侧 -->
+    <model name="b_west_north"><static>true</static><pose>1.6 1.73325 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 2.9335 2.5</size></box></geometry><material><ambient>0.11 0.19 0.17 1</ambient><diffuse>0.26 0.44 0.40 1</diffuse><specular>0.10 0.12 0.10 1</specular></material></visual></link></model>
+    <!-- 房间B 西墙 洞口上方过梁（门下沿 z=0.544，上沿 z=2.5） -->
+    <model name="b_west_header"><static>true</static><pose>1.6 0 1.522 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 0.533 1.956</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 0.533 1.956</size></box></geometry><material><ambient>0.20 0.08 0.16 1</ambient><diffuse>0.52 0.24 0.44 1</diffuse><specular>0.12 0.08 0.10 1</specular></material></visual></link></model>
+  </world>
+</sdf>

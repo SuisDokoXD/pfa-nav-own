@@ -120,3 +120,11 @@ robots:
     #   y_pose: "-3.5"
     #   z_pose: "0.28"
     #   yaw: "3.14"
+
+  dumbbell:
+    - name: "red_standard_robot1"
+      color: "red"
+      x_pose: "-4.5"
+      y_pose: "0.0"
+      z_pose: "0.08"
+      yaw: "0.0"
