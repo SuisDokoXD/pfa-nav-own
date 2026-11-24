@@ -525,8 +525,8 @@ int main(int argc, char **argv) {
           if (indX >= 0 && indX < planarVoxelWidth && indY >= 0 &&
               indY < planarVoxelWidth) {
             int ind = planarVoxelWidth * indX + indY;
-            float disZ = fabs(point.z - planarVoxelElev[ind]);
-            if (disZ < vehicleHeight &&
+            float disZ = point.z - planarVoxelElev[ind];
+            if (disZ >= 0 && disZ < vehicleHeight &&
                 (planarVoxelConn[ind] == 2 || !checkTerrainConn)) {
               terrainCloudElev->push_back(point);
               terrainCloudElev->points[terrainCloudElevSize].x = point.x;
