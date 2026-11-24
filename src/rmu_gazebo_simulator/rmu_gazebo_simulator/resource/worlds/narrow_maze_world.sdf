@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <world name="default">
+    <physics name="default_physics" type="ode">
+      <max_step_size>0.01</max_step_size>
+      <real_time_update_rate>100</real_time_update_rate>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="libignition-gazebo-physics-system.so" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so" name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="libignition-gazebo-user-commands-system.so" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="libignition-gazebo-sensors-system.so" name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="libignition-gazebo-imu-system.so" name="ignition::gazebo::systems::Imu"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.4 0.2 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <material><ambient>0.72 0.72 0.72 1</ambient><diffuse>0.72 0.72 0.72 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Narrow multi-corner maze inside x in [-5.0, +5.0], y in [-4.0, +4.0].
+         Wall thickness: 0.20 m, height: 2.50 m.
+         Graduated clear corridor widths from start (-4.2, -3.1) to finish (+3.5, +2.8):
+           Col 1 (start): 1.60 m -> Top turn: 1.40 m -> Col 2: 1.30 m -> Bottom U-turn: 1.30 m
+           -> Col 3 S-chicane (H1/H2): 1.15 m -> Top turn: 1.15 m -> Col 4: 1.10 m
+           -> Bottom U-turn: 1.05 m -> Final narrow gate (H3): 1.00 m -> Finish bay. -->
+
+    <!-- Outer boundary walls (slate blue-gray) -->
+    <model name="outer_south"><static>true</static><pose>0.0 -4.1 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>10.4 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>10.4 0.2 2.5</size></box></geometry><material><ambient>0.20 0.24 0.30 1</ambient><diffuse>0.36 0.42 0.50 1</diffuse></material></visual></link></model>
+    <model name="outer_north"><static>true</static><pose>0.0 4.1 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>10.4 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>10.4 0.2 2.5</size></box></geometry><material><ambient>0.20 0.24 0.30 1</ambient><diffuse>0.36 0.42 0.50 1</diffuse></material></visual></link></model>
+    <model name="outer_west"><static>true</static><pose>-5.1 0.0 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 8.0 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 8.0 2.5</size></box></geometry><material><ambient>0.20 0.24 0.30 1</ambient><diffuse>0.36 0.42 0.50 1</diffuse></material></visual></link></model>
+    <model name="outer_east"><static>true</static><pose>5.1 0.0 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 8.0 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 8.0 2.5</size></box></geometry><material><ambient>0.20 0.24 0.30 1</ambient><diffuse>0.36 0.42 0.50 1</diffuse></material></visual></link></model>
+
+    <!-- Main vertical maze baffles (teal) -->
+    <!-- V1: x in [-3.4, -3.2], y in [-4.0, +2.6] -> leaves 1.40 m north gap -->
+    <model name="maze_v1"><static>true</static><pose>-3.3 -0.7 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 6.6 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 6.6 2.5</size></box></geometry><material><ambient>0.14 0.28 0.28 1</ambient><diffuse>0.24 0.50 0.48 1</diffuse></material></visual></link></model>
+    <!-- V2: x in [-1.9, -1.7], y in [-2.7, +4.0] -> Col 2 width 1.30 m, south gap 1.30 m -->
+    <model name="maze_v2"><static>true</static><pose>-1.8 0.65 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 6.7 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 6.7 2.5</size></box></geometry><material><ambient>0.14 0.28 0.28 1</ambient><diffuse>0.24 0.50 0.48 1</diffuse></material></visual></link></model>
+    <!-- V3: x in [+0.6, +0.8], y in [-4.0, +2.85] -> north gap 1.15 m -->
+    <model name="maze_v3"><static>true</static><pose>0.7 -0.575 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 6.85 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 6.85 2.5</size></box></geometry><material><ambient>0.14 0.28 0.28 1</ambient><diffuse>0.24 0.50 0.48 1</diffuse></material></visual></link></model>
+    <!-- V4: x in [+1.9, +2.1], y in [-2.95, +4.0] -> Col 4 width 1.10 m, south gap 1.05 m -->
+    <model name="maze_v4"><static>true</static><pose>2.0 0.525 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>0.2 6.95 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.2 6.95 2.5</size></box></geometry><material><ambient>0.14 0.28 0.28 1</ambient><diffuse>0.24 0.50 0.48 1</diffuse></material></visual></link></model>
+
+    <!-- Mid-maze S-chicane baffles inside Col 3 (amber, 1.15 m clear width everywhere) -->
+    <!-- H1: x in [-1.7, -0.55], y in [-0.9, -0.7] -> leaves 1.15 m east gap to V3 -->
+    <model name="chicane_h1"><static>true</static><pose>-1.125 -0.8 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>1.15 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.15 0.2 2.5</size></box></geometry><material><ambient>0.36 0.22 0.08 1</ambient><diffuse>0.82 0.52 0.18 1</diffuse></material></visual></link></model>
+    <!-- H2: x in [-0.55, +0.6], y in [+0.45, +0.65] -> leaves 1.15 m west gap to V2 & 1.15 m gap from H1 -->
+    <model name="chicane_h2"><static>true</static><pose>0.025 0.55 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>1.15 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.15 0.2 2.5</size></box></geometry><material><ambient>0.36 0.22 0.08 1</ambient><diffuse>0.82 0.52 0.18 1</diffuse></material></visual></link></model>
+
+    <!-- Final tight 1.00 m gate before finish bay (coral red) -->
+    <!-- H3: x in [+2.1, +4.0], y in [+0.4, +0.6] -> leaves 1.00 m east gap to outer_east -->
+    <model name="final_gate_h3"><static>true</static><pose>3.05 0.5 1.25 0 0 0</pose><link name="wall"><collision name="collision"><geometry><box><size>1.9 0.2 2.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.9 0.2 2.5</size></box></geometry><material><ambient>0.38 0.12 0.12 1</ambient><diffuse>0.80 0.26 0.24 1</diffuse></material></visual></link></model>
+  </world>
+</sdf>

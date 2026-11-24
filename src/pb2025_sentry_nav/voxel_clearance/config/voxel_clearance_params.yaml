@@ -1,0 +1,67 @@
+voxel_clearance:
+  ros__parameters:
+    # Topic & frame wiring (compatible with loam_interface / Nav2 / pointcloud_to_laserscan)
+    odom_topic: "lidar_odometry"
+    scan_topic: "registered_scan"
+    lifter_state_topic: "/lifter_state"
+    odom_frame: "odom"
+    # Optional secondary LiDAR cloud topics (e.g., 30-deg tilted gimbal LiDAR) to fuse in odom frame.
+    # NOTE: Leave commented out when unused; ROS 2 Humble YAML parser rejects empty `[]` for string_array.
+    # extra_cloud_topics: ["rear_lidar/points"]
+
+    # Output rates & ranges matching terrain_map / terrain_map_ext consumers
+    publish_rate_hz: 10.0
+    local_radius: 5.0
+    ext_radius: 10.0
+    # Normalize output Z into 0.25 m so unedited nav2_params.yaml (IntensityVoxelLayer 0~0.8 m
+    # and pointcloud_to_laserscan -1.5~2.0 m) never clips obstacles on steep/high/downhill ramps.
+    project_output_z: true
+    output_projected_z: 0.25
+    obstacle_intensity: 1.0
+    free_intensity: 0.0
+    publish_markers: true
+
+    # Rolling 3D column-voxel grid (0.15 m matches point_lio 0.2 m surface downsampling without gaps)
+    xy_resolution: 0.15
+    z_resolution: 0.02
+    grid_radius: 10.0
+    decay_time: 1.5
+    low_clearance_latch_time: 6.0
+
+    # Generous slope-aware vertical crop relative to chassis base_z (handles 23 deg ramps up/down)
+    min_rel_z: -2.5
+    max_rel_z: 2.5
+    dis_ratio_z: 0.5
+
+    # Self-filter box around robot footprint (generous margin for tilt/spin latency)
+    self_filter_half_x: 0.40
+    self_filter_half_y: 0.40
+    self_filter_min_z: -0.15
+    self_filter_max_z_margin: 0.20
+
+    # Step A: vertical clustering & single-column wall thickness test
+    # On 23 deg ramps, a single 0.15m cell spans ~0.09m diagonally in Z plus LiDAR/LIO jitter;
+    # 0.22m avoids steep-ramp false walls while still flagging real curbs/walls immediately.
+    cluster_z_gap: 0.08
+    max_ground_thickness: 0.22
+    min_ground_points: 1
+    min_overhead_points: 2
+
+    # Step B: 8-neighbor slope continuity & vertical curb/step threshold
+    # 30 deg passes 6/11/14/23 deg ramps and occluded crests with noise margin while blocking cliffs & curbs.
+    max_traversable_slope_deg: 30.0
+    max_step_height: 0.12
+    despeckle_isolated_obstacles: true
+    min_plane_fit_neighbors: 5
+    min_obstacle_confirm_frames: 3
+
+    # Step C: dual-height overhead clearance parameters (Phase 1 default: non-lifting old robot;
+    # update when new dual-LiDAR lifting robot model arrives, delta_z = 0.19179 m).
+    robot_height_high: 0.55
+    robot_height_low: 0.55
+    clearance_margin_high: 0.05
+    clearance_margin_low: 0.005
+    treat_low_clearance_as_obstacle: true
+    freeze_during_lift: true
+    lidar_z_offset_high: 0.256
+    lidar_z_offset_low: 0.06421

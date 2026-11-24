@@ -21,6 +21,7 @@
 
 #include "nav2_core/controller.hpp"
 #include "pb_omni_pid_pursuit_controller/pid.hpp"
+#include "pb_omni_pid_pursuit_controller/pursuit_geometry.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
 namespace pb_omni_pid_pursuit_controller
@@ -204,8 +205,14 @@ private:
    * @param linear_vel Linear velocity command (in out)
    */
   void applyCurvatureLimitation(
-    const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
-    double & linear_vel);
+    const std::vector<Point2D> & path_points, const std::vector<double> & cumulative_arc_lengths,
+    double carrot_arc_length, const std_msgs::msg::Header & header, double & linear_vel);
+
+  CostQuery makeRobotFrameCostQuery(const geometry_msgs::msg::PoseStamped & robot_pose_in_costmap) const;
+
+  bool isMotionCollisionDetected(
+    const std::vector<Point2D> & path_points, const Point2D & carrot_point,
+    const CostQuery & cost_query) const;
 
   /**
    * @brief Calculates curvature using three-point circle fitting
@@ -265,7 +272,7 @@ private:
   nav2_costmap_2d::Costmap2D * costmap_;
   rclcpp::Logger logger_{rclcpp::get_logger("OmniPidPursuitController")};
   rclcpp::Clock::SharedPtr clock_;
-  double last_velocity_scaling_factor_;
+  double last_velocity_scaling_factor_{1.0};
 
   std::shared_ptr<PID> move_pid_;
   std::shared_ptr<PID> heading_pid_;
@@ -297,6 +304,17 @@ private:
   double curvature_forward_dist_;
   double curvature_backward_dist_;
   double max_velocity_scaling_factor_rate_;
+  double max_chord_deviation_{0.06};
+  bool use_costmap_los_clamp_{true};
+  int los_cost_threshold_{253};
+  double cte_kp_{1.5};
+  double max_cte_vel_{0.4};
+  double min_curvature_linear_velocity_{0.25};
+  double collision_check_dist_{0.6};
+  double lookahead_dist_filter_alpha_{0.2};
+  double max_lookahead_dist_rate_{0.5};
+  double filtered_lookahead_dist_{0.5};
+  bool lookahead_dist_initialized_{false};
   tf2::Duration transform_tolerance_;
 
   nav_msgs::msg::Path global_plan_;

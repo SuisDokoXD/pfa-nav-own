@@ -128,3 +128,19 @@ robots:
       y_pose: "0.0"
       z_pose: "0.08"
       yaw: "0.0"
+
+  narrow_maze:
+    - name: "red_standard_robot1"
+      color: "red"
+      x_pose: "-4.2"
+      y_pose: "-3.1"
+      z_pose: "0.28"
+      yaw: "1.5708"
+
+  switchback_ramps:
+    - name: "red_standard_robot1"
+      color: "red"
+      x_pose: "-4.6"
+      y_pose: "-0.5"
+      z_pose: "0.18"
+      yaw: "0.0"

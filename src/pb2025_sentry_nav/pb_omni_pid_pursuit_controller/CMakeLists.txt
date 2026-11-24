@@ -7,14 +7,18 @@ ament_auto_find_build_dependencies()
 ament_auto_add_library(${PROJECT_NAME} SHARED
   src/omni_pid_pursuit_controller.cpp
   src/pid.cpp
+  src/pursuit_geometry.cpp
 )
 
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  list(APPEND AMENT_LINT_AUTO_EXCLUDE
-    ament_cmake_uncrustify
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_pursuit_geometry
+    test/test_pursuit_geometry.cpp
+    src/pursuit_geometry.cpp
   )
-  ament_lint_auto_find_test_dependencies()
+  target_include_directories(test_pursuit_geometry PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
 endif()
 
 pluginlib_export_plugin_description_file(nav2_core pb_omni_pid_pursuit_controller.xml)

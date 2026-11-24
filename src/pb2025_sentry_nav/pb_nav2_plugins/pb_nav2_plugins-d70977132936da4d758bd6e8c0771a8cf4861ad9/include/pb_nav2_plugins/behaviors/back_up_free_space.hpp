@@ -79,6 +79,22 @@ protected:
   std::vector<geometry_msgs::msg::Point> gatherFreePoints(
     const nav2_msgs::msg::Costmap & costmap, geometry_msgs::msg::Pose2D pose, float radius);
 
+  struct DirectionResult
+  {
+    bool found{false};
+    float angle{0.0f};
+    float escape_distance{0.0f};
+    float safe_distance{0.0f};
+    float arc_start{0.0f};
+    float arc_end{0.0f};
+  };
+
+  bool isOmniPathCollisionFree(double distance_traveled, const geometry_msgs::msg::Pose2D & pose);
+
+  DirectionResult findBestDirectionDetailed(
+    const nav2_msgs::msg::Costmap & costmap, geometry_msgs::msg::Pose2D pose, float start_angle,
+    float end_angle, float radius, float angle_increment);
+
   float findBestDirection(
     const nav2_msgs::msg::Costmap & costmap, geometry_msgs::msg::Pose2D pose, float start_angle,
     float end_angle, float radius, float angle_increment);
@@ -89,7 +105,10 @@ protected:
   rclcpp::Client<nav2_msgs::srv::GetCostmap>::SharedPtr costmap_client_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>>
     marker_pub_;
-  double twist_x_, twist_y_;
+  double twist_x_{0.0}, twist_y_{0.0};
+  double best_world_angle_{0.0};
+  double backup_speed_{0.0};
+  double escape_distance_{0.0};
 
   // parameters
   std::string service_name_;

@@ -28,11 +28,14 @@ from nav2_common.launch import RewrittenYaml
 def generate_launch_description():
     # Get the launch directory
     bringup_dir = get_package_share_directory("pb2025_nav_bringup")
+    voxel_clearance_dir = get_package_share_directory("voxel_clearance")
 
     namespace = LaunchConfiguration("namespace")
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
     params_file = LaunchConfiguration("params_file")
+    use_voxel_clearance = LaunchConfiguration("use_voxel_clearance")
+    voxel_clearance_params_file = LaunchConfiguration("voxel_clearance_params_file")
     use_composition = LaunchConfiguration("use_composition")
     container_name = LaunchConfiguration("container_name")
     container_name_full = (namespace, "/", container_name)
@@ -57,6 +60,16 @@ def generate_launch_description():
             source_file=params_file,
             root_key=namespace,
             param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+
+    configured_voxel_params = ParameterFile(
+        RewrittenYaml(
+            source_file=voxel_clearance_params_file,
+            root_key=namespace,
+            param_rewrites={"use_sim_time": use_sim_time},
             convert_types=True,
         ),
         allow_substs=True,
@@ -114,7 +127,22 @@ def generate_launch_description():
         "log_level", default_value="info", description="log level"
     )
 
+    declare_use_voxel_clearance_cmd = DeclareLaunchArgument(
+        "use_voxel_clearance",
+        default_value="False",
+        description="Use 3D column-voxel slope-aware clearance node instead of terrain_analysis.",
+    )
+
+    declare_voxel_clearance_params_file_cmd = DeclareLaunchArgument(
+        "voxel_clearance_params_file",
+        default_value=os.path.join(
+            voxel_clearance_dir, "config", "voxel_clearance_params.yaml"
+        ),
+        description="Full path to the voxel_clearance parameters YAML file.",
+    )
+
     start_terrain_analysis_cmd = Node(
+        condition=IfCondition(PythonExpression(["not ", use_voxel_clearance])),
         package="terrain_analysis",
         executable="terrainAnalysis",
         name="terrain_analysis",
@@ -126,6 +154,7 @@ def generate_launch_description():
     )
 
     start_terrain_analysis_ext_cmd = Node(
+        condition=IfCondition(PythonExpression(["not ", use_voxel_clearance])),
         package="terrain_analysis_ext",
         executable="terrainAnalysisExt",
         name="terrain_analysis_ext",
@@ -134,6 +163,18 @@ def generate_launch_description():
         respawn_delay=2.0,
         arguments=["--ros-args", "--log-level", log_level],
         parameters=[configured_params],
+    )
+
+    start_voxel_clearance_cmd = Node(
+        condition=IfCondition(use_voxel_clearance),
+        package="voxel_clearance",
+        executable="voxel_clearance_node",
+        name="voxel_clearance",
+        output="screen",
+        respawn=use_respawn,
+        respawn_delay=2.0,
+        arguments=["--ros-args", "--log-level", log_level],
+        parameters=[configured_voxel_params, {"use_sim_time": use_sim_time}],
     )
 
     load_nodes = GroupAction(
@@ -333,9 +374,12 @@ def generate_launch_description():
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    ld.add_action(declare_use_voxel_clearance_cmd)
+    ld.add_action(declare_voxel_clearance_params_file_cmd)
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_terrain_analysis_cmd)
     ld.add_action(start_terrain_analysis_ext_cmd)
+    ld.add_action(start_voxel_clearance_cmd)
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)
 
