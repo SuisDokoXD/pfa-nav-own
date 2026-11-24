@@ -1,0 +1,12 @@
+gimbal_bridge:
+  ros__parameters:
+    # serial device. /dev/ttyACM0 is the STM32 native USB (CDC ACM).
+    port: "/dev/ttyACM0"
+    # virtual baud for USB CDC; only matters for a real UART adapter.
+    baud: 115200
+    # frame rate for VisionToGimbal (C board sends ~1000 Hz back)
+    tx_rate_hz: 100.0
+    # mode used before /gimbal_aim arrives. 0 = do not take over the gimbal.
+    default_mode: 0
+    # log the first few outgoing frames (useful when bringing the link up)
+    print_tx: false
