@@ -15,6 +15,7 @@
 #ifndef FAKE_VEL_TRANSFORM__FAKE_VEL_TRANSFORM_HPP_
 #define FAKE_VEL_TRANSFORM__FAKE_VEL_TRANSFORM_HPP_
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -27,6 +28,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 
 namespace fake_vel_transform
@@ -44,12 +46,21 @@ private:
   void localPlanCallback(const nav_msgs::msg::Path::ConstSharedPtr & msg);
   void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void cmdSpinCallback(example_interfaces::msg::Float32::SharedPtr msg);
+  void overrideActiveCallback(const std_msgs::msg::Bool::SharedPtr msg);
+  void overrideCmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void alignWzActiveCallback(const std_msgs::msg::Bool::SharedPtr msg);
+  void alignWzCallback(const example_interfaces::msg::Float32::SharedPtr msg);
   void publishTransform();
   geometry_msgs::msg::Twist transformVelocity(
-    const geometry_msgs::msg::Twist::SharedPtr & twist, float yaw_diff);
+    const geometry_msgs::msg::Twist & twist, float yaw_diff, bool use_spin_speed) const;
+  void publishActiveCommandLocked();
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<example_interfaces::msg::Float32>::SharedPtr cmd_spin_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr override_active_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr override_cmd_vel_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr align_wz_active_sub_;
+  rclcpp::Subscription<example_interfaces::msg::Float32>::SharedPtr align_wz_sub_;
 
   message_filters::Subscriber<nav_msgs::msg::Odometry> odom_sub_filter_;
   message_filters::Subscriber<nav_msgs::msg::Path> local_plan_sub_filter_;
@@ -70,10 +81,21 @@ private:
   std::string cmd_spin_topic_;
   std::string input_cmd_vel_topic_;
   std::string output_cmd_vel_topic_;
-  float spin_speed_;
+  std::string override_active_topic_;
+  std::string override_cmd_vel_topic_;
+  std::string align_wz_active_topic_;
+  std::string align_wz_topic_;
+  float spin_speed_{0.0f};
+  double override_timeout_sec_{0.5};
 
   std::mutex cmd_vel_mutex_;
   geometry_msgs::msg::Twist::SharedPtr latest_cmd_vel_;
+  geometry_msgs::msg::Twist override_cmd_vel_;
+  bool override_active_{false};
+  bool align_wz_active_{false};
+  float align_wz_{0.0f};
+  std::chrono::steady_clock::time_point last_override_time_;
+  std::chrono::steady_clock::time_point last_align_wz_time_;
   double current_robot_base_angle_{0.0};
   bool has_odom_{false};
   rclcpp::Time last_controller_activate_time_;

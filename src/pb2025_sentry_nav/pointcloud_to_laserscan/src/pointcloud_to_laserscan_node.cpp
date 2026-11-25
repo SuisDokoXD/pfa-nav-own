@@ -98,43 +98,40 @@ PointCloudToLaserScanNode::PointCloudToLaserScanNode(const rclcpp::NodeOptions &
     sub_.registerCallback(std::bind(&PointCloudToLaserScanNode::cloudCallback, this, _1));
   }
 
-  subscription_listener_thread_ = std::thread(
-    std::bind(&PointCloudToLaserScanNode::subscriptionListenerThreadLoop, this));
+  // Check subscriber count on the node's own executor thread (avoids ROS 2 Humble startup SIGSEGV
+  // from mutating subscriptions concurrently inside a background std::thread).
+  subscription_check_timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(100),
+    std::bind(&PointCloudToLaserScanNode::subscriptionCheckCallback, this));
 }
 
 PointCloudToLaserScanNode::~PointCloudToLaserScanNode()
 {
-  alive_.store(false);
-  subscription_listener_thread_.join();
-}
-
-void PointCloudToLaserScanNode::subscriptionListenerThreadLoop()
-{
-  rclcpp::Context::SharedPtr context = this->get_node_base_interface()->get_context();
-
-  const std::chrono::milliseconds timeout(100);
-  while (rclcpp::ok(context) && alive_.load()) {
-    int subscription_count = pub_->get_subscription_count() +
-      pub_->get_intra_process_subscription_count();
-    if (subscription_count > 0) {
-      if (!sub_.getSubscriber()) {
-        RCLCPP_INFO(
-          this->get_logger(),
-          "Got a subscriber to laserscan, starting pointcloud subscriber");
-        rclcpp::SensorDataQoS qos;
-        qos.keep_last(input_queue_size_);
-        sub_.subscribe(this, "cloud_in", qos.get_rmw_qos_profile());
-      }
-    } else if (sub_.getSubscriber()) {
-      RCLCPP_INFO(
-        this->get_logger(),
-        "No subscribers to laserscan, shutting down pointcloud subscriber");
-      sub_.unsubscribe();
-    }
-    rclcpp::Event::SharedPtr event = this->get_graph_event();
-    this->wait_for_graph_change(event, timeout);
+  if (subscription_check_timer_) {
+    subscription_check_timer_->cancel();
   }
   sub_.unsubscribe();
+}
+
+void PointCloudToLaserScanNode::subscriptionCheckCallback()
+{
+  int subscription_count = pub_->get_subscription_count() +
+    pub_->get_intra_process_subscription_count();
+  if (subscription_count > 0) {
+    if (!sub_.getSubscriber()) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Got a subscriber to laserscan, starting pointcloud subscriber");
+      rclcpp::SensorDataQoS qos;
+      qos.keep_last(input_queue_size_);
+      sub_.subscribe(this, "cloud_in", qos.get_rmw_qos_profile());
+    }
+  } else if (sub_.getSubscriber()) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "No subscribers to laserscan, shutting down pointcloud subscriber");
+    sub_.unsubscribe();
+  }
 }
 
 void PointCloudToLaserScanNode::cloudCallback(
@@ -229,7 +226,10 @@ void PointCloudToLaserScanNode::cloudCallback(
     }
 
     // overwrite range at laserscan ray if new range is smaller
-    int index = (angle - scan_msg->angle_min) / scan_msg->angle_increment;
+    int index = static_cast<int>((angle - scan_msg->angle_min) / scan_msg->angle_increment);
+    if (index < 0 || index >= static_cast<int>(ranges_size)) {
+      continue;
+    }
     if (range < scan_msg->ranges[index]) {
       scan_msg->ranges[index] = range;
     }

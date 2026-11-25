@@ -1,0 +1,153 @@
+tunnel_align_supervisor:
+  ros__parameters:
+    # Topic names (relative by default so robot namespaces like red_standard_robot1 work automatically;
+    # on reality with un-namespaced gimbal_bridge, remap or override to /tunnel_align, /lifter_state, /gimbal_state)
+    trigger_topic: "tunnel_align_trigger"
+    align_only_trigger_topic: "tunnel_align_only"
+    wall_cloud_topic: "registered_scan"
+    terrain_map_topic: "terrain_map"
+    plan_topic: "plan"
+    odom_topic: "odometry"
+    lidar_odom_topic: "lidar_odometry"
+    lifter_state_topic: "lifter_state"
+    gimbal_state_topic: "gimbal_state"
+    cmd_spin_topic: "cmd_spin"
+    override_active_topic: "cmd_vel_override_active"
+    override_cmd_vel_topic: "cmd_vel_override"
+    tunnel_align_topic: "tunnel_align"
+    status_topic: "tunnel_align_status"
+    marker_topic: "tunnel_align_markers"
+
+    # TF frames
+    odom_frame: "odom"
+    gimbal_frame: "gimbal_yaw"
+    chassis_frame: "base_footprint"
+
+    # Firmware contract (match C-board agreement!)
+    # "relative_gimbal" = Option A (recommended): target chassis yaw relative to current gimbal yaw
+    # "imu_world"       = Option B: target chassis absolute yaw in C-board power-on IMU frame
+    align_angle_mode: "relative_gimbal"
+    # +1.0 for CCW-positive (standard ROS), -1.0 if firmware expects CW-positive
+    align_angle_sign: 1.0
+    # 1 = align chassis +X forward into tunnel (required when single tilted LiDAR is chassis-front-mounted
+    #     so return trips rotate 180 deg and keep the LiDAR looking down the tunnel);
+    # 4 = square chassis 90 deg symmetry (max turn <= 45 deg, use on 360-deg dual-LiDAR robot).
+    chassis_symmetry_fold: 1
+
+    # Spin & motion timing
+    control_rate_hz: 20.0
+    resume_spin_speed: 3.14
+    # true: stop spin -> align chassis to gimbal -> align to tunnel;
+    # false: stop spin -> jump directly to tunnel alignment (saves ~1.5 s on return trips).
+    align_gimbal_first: false
+    stop_linear_vel_threshold: 0.15
+    min_stage_settle_sec: 0.12
+    align_timeout_sec: 4.0
+    restore_settle_sec: 0.08
+
+    # High-efficiency centered straight traversal (damped entry centering + smooth fast cruise)
+    traverse_speed: 0.75
+    traverse_accel_time_sec: 0.35
+    lateral_kp: 2.0
+    max_lateral_speed: 0.38
+    min_entry_lateral_speed: 0.16
+    entry_centering_timeout_sec: 1.5
+    lateral_ema_alpha: 0.55
+    lateral_deadband_m: 0.005
+    lateral_entry_tol_m: 0.018
+    lateral_cruise_slow_m: 0.032
+    max_traverse_distance: 6.0
+    exit_on_corridor_open: true
+    # Counted only AFTER bilateral walls AND the robot's ±0.45 m spin-clearance envelope clear the tunnel.
+    exit_clear_distance: 0.35
+    require_wall_fit_to_traverse: true
+    wall_obstacle_min_intensity: 0.1
+
+    # 3D Z-band wall slicing from registered_scan: ignores floor (0m) and low tunnel roofs/headers
+    # (>=0.544m, leaving >20 cm margin against Point-LIO Z drift) while keeping ~2cm wall precision.
+    # Rolling 3.0s window covers Point-LIO's 0.50m blind sphere through the exit without accumulating
+    # cross-trip odometry drift; front_blocked uses only fresh <=0.5s live points.
+    wall_cloud_use_z_band: true
+    wall_z_min_rel: 0.08
+    wall_z_max_rel: 0.34
+    lidar_z_offset: 0.256
+    wall_cloud_decay_sec: 3.0
+    front_obstacle_decay_sec: 0.5
+    wall_voxel_size: 0.02
+    wall_self_filter_radius: 0.22
+    wall_max_range: 5.0
+    plan_timeout_sec: 3.0
+
+    # Layer 2 doorway-gap + depth approach (auto-stage in front of doorway when far or off-center)
+    enable_doorway_approach: true
+    doorway_stage_dist_m: 0.65
+    approach_speed: 0.65
+    approach_timeout_sec: 8.0
+    approach_settle_wait_sec: 0.60
+    discovery_roi_max_x: 4.5
+
+    # Parallel-wall corridor estimator parameters (Layer 1 strict anti-false-positive invariants)
+    roi_min_x: -0.6
+    roi_max_x: 3.2
+    min_half_width: 0.04
+    max_half_width: 1.00
+    min_corridor_width: 0.40
+    max_corridor_width: 1.25
+    slice_length: 0.16
+    wall_inlier_band: 0.22
+    min_slices_per_side: 3
+    max_heading_correction_deg: 40.0
+    min_elongation_ratio: 3.0
+    min_wall_length: 0.40
+    min_bilateral_overlap: 0.35
+    max_side_rms: 0.08
+    max_side_angle_diff_deg: 16.0
+    interior_margin_m: 0.09
+    max_interior_block_points: 5
+    doorway_min_wall_dist: 0.30
+    doorway_max_wall_dist: 4.80
+    doorway_wall_band_m: 0.12
+    doorway_min_flank_length: 0.30
+    doorway_min_flank_points: 4
+    doorway_depth_min_behind: 0.22
+    doorway_depth_max_behind: 2.80
+    doorway_min_depth_span: 0.30
+    doorway_min_depth_points: 4
+    front_obstacle_min_x: 0.15
+    front_obstacle_check_dist: 0.42
+    front_obstacle_half_width: 0.12
+    front_obstacle_min_points: 3
+    spin_clear_half_length: 0.45
+    spin_clear_half_width: 0.42
+    spin_clear_min_points: 3
+
+sim_cboard_emulator:
+  ros__parameters:
+    tunnel_align_topic: "tunnel_align"
+    lifter_cmd_topic: "lifter_cmd"
+    joint_states_topic: "joint_states"
+    align_wz_active_topic: "cmd_align_wz_active"
+    align_wz_topic: "cmd_align_wz"
+    lifter_state_topic: "lifter_state"
+    gimbal_state_topic: "gimbal_state"
+
+    odom_frame: "odom"
+    gimbal_frame: "gimbal_yaw"
+    chassis_frame: "base_footprint"
+    gimbal_yaw_joint_name: "gimbal_yaw_joint"
+
+    # Must match tunnel_align_supervisor.align_angle_mode
+    align_angle_mode: "relative_gimbal"
+    align_angle_sign: 1.0
+    # Simulated power-on IMU offset relative to odom/map (useful to verify Option B calibration)
+    imu_yaw_offset_deg: 0.0
+
+    # Closed-loop chassis yaw PID emulation (fast, damped, 1.8 deg tight tolerance)
+    control_rate_hz: 50.0
+    yaw_kp: 6.5
+    yaw_kd: 0.45
+    max_wz: 4.5
+    aligned_angle_tol_deg: 1.8
+    aligned_vel_tol_rad_s: 0.18
+    aligned_hold_sec: 0.10
+    lifter_stroke_duration_sec: 1.2

@@ -101,6 +101,7 @@ def generate_launch_description():
     # Get the launch directory
     bringup_dir = get_package_share_directory("pb2025_nav_bringup")
     voxel_clearance_dir = get_package_share_directory("voxel_clearance")
+    tunnel_align_dir = get_package_share_directory("tunnel_align")
     launch_dir = os.path.join(bringup_dir, "launch")
     src_bringup_dir = _src_bringup_dir(bringup_dir)
     src_map_reality_dir = os.path.join(src_bringup_dir, "map", "reality")
@@ -116,6 +117,8 @@ def generate_launch_description():
     params_file = LaunchConfiguration("params_file")
     use_voxel_clearance = LaunchConfiguration("use_voxel_clearance")
     voxel_clearance_params_file = LaunchConfiguration("voxel_clearance_params_file")
+    use_tunnel_align = LaunchConfiguration("use_tunnel_align")
+    tunnel_align_params_file = LaunchConfiguration("tunnel_align_params_file")
     autostart = LaunchConfiguration("autostart")
     use_composition = LaunchConfiguration("use_composition")
     use_respawn = LaunchConfiguration("use_respawn")
@@ -278,6 +281,20 @@ def generate_launch_description():
         description="Full path to the voxel_clearance parameters YAML file.",
     )
 
+    declare_use_tunnel_align_cmd = DeclareLaunchArgument(
+        "use_tunnel_align",
+        default_value="False",
+        description="Launch tunnel_align_supervisor for stop-spin, gimbal/tunnel alignment and centered traverse.",
+    )
+
+    declare_tunnel_align_params_file_cmd = DeclareLaunchArgument(
+        "tunnel_align_params_file",
+        default_value=os.path.join(
+            tunnel_align_dir, "config", "tunnel_align_params.yaml"
+        ),
+        description="Full path to the tunnel_align parameters YAML file.",
+    )
+
     # Create our own temporary YAML files that include substitutions
 
     configured_params = ParameterFile(
@@ -338,6 +355,9 @@ def generate_launch_description():
             "params_file": params_file,
             "use_voxel_clearance": use_voxel_clearance,
             "voxel_clearance_params_file": voxel_clearance_params_file,
+            "use_tunnel_align": use_tunnel_align,
+            "use_sim_cboard_emulator": "False",
+            "tunnel_align_params_file": tunnel_align_params_file,
             "autostart": autostart,
             "use_composition": use_composition,
             "use_respawn": use_respawn,
@@ -386,6 +406,8 @@ def generate_launch_description():
     ld.add_action(declare_auto_save_pcd_interval_cmd)
     ld.add_action(declare_use_voxel_clearance_cmd)
     ld.add_action(declare_voxel_clearance_params_file_cmd)
+    ld.add_action(declare_use_tunnel_align_cmd)
+    ld.add_action(declare_tunnel_align_params_file_cmd)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(OpaqueFunction(function=_check_navigation_inputs))

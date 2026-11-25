@@ -29,6 +29,7 @@ def generate_launch_description():
     # Get the launch directory
     bringup_dir = get_package_share_directory("pb2025_nav_bringup")
     voxel_clearance_dir = get_package_share_directory("voxel_clearance")
+    tunnel_align_dir = get_package_share_directory("tunnel_align")
 
     namespace = LaunchConfiguration("namespace")
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -36,6 +37,9 @@ def generate_launch_description():
     params_file = LaunchConfiguration("params_file")
     use_voxel_clearance = LaunchConfiguration("use_voxel_clearance")
     voxel_clearance_params_file = LaunchConfiguration("voxel_clearance_params_file")
+    use_tunnel_align = LaunchConfiguration("use_tunnel_align")
+    use_sim_cboard_emulator = LaunchConfiguration("use_sim_cboard_emulator")
+    tunnel_align_params_file = LaunchConfiguration("tunnel_align_params_file")
     use_composition = LaunchConfiguration("use_composition")
     container_name = LaunchConfiguration("container_name")
     container_name_full = (namespace, "/", container_name)
@@ -68,6 +72,16 @@ def generate_launch_description():
     configured_voxel_params = ParameterFile(
         RewrittenYaml(
             source_file=voxel_clearance_params_file,
+            root_key=namespace,
+            param_rewrites={"use_sim_time": use_sim_time},
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+
+    configured_tunnel_align_params = ParameterFile(
+        RewrittenYaml(
+            source_file=tunnel_align_params_file,
             root_key=namespace,
             param_rewrites={"use_sim_time": use_sim_time},
             convert_types=True,
@@ -141,6 +155,26 @@ def generate_launch_description():
         description="Full path to the voxel_clearance parameters YAML file.",
     )
 
+    declare_use_tunnel_align_cmd = DeclareLaunchArgument(
+        "use_tunnel_align",
+        default_value="False",
+        description="Launch tunnel_align_supervisor for stop-spin, gimbal/tunnel alignment and centered traverse.",
+    )
+
+    declare_use_sim_cboard_emulator_cmd = DeclareLaunchArgument(
+        "use_sim_cboard_emulator",
+        default_value="False",
+        description="Launch sim_cboard_emulator (Gazebo only; set False on real robot with gimbal_bridge).",
+    )
+
+    declare_tunnel_align_params_file_cmd = DeclareLaunchArgument(
+        "tunnel_align_params_file",
+        default_value=os.path.join(
+            tunnel_align_dir, "config", "tunnel_align_params.yaml"
+        ),
+        description="Full path to the tunnel_align parameters YAML file.",
+    )
+
     start_terrain_analysis_cmd = Node(
         condition=IfCondition(PythonExpression(["not ", use_voxel_clearance])),
         package="terrain_analysis",
@@ -175,6 +209,32 @@ def generate_launch_description():
         respawn_delay=2.0,
         arguments=["--ros-args", "--log-level", log_level],
         parameters=[configured_voxel_params, {"use_sim_time": use_sim_time}],
+    )
+
+    start_tunnel_align_supervisor_cmd = Node(
+        condition=IfCondition(use_tunnel_align),
+        package="tunnel_align",
+        executable="tunnel_align_supervisor_node",
+        name="tunnel_align_supervisor",
+        output="screen",
+        respawn=use_respawn,
+        respawn_delay=2.0,
+        arguments=["--ros-args", "--log-level", log_level],
+        parameters=[configured_tunnel_align_params, {"use_sim_time": use_sim_time}],
+    )
+
+    start_sim_cboard_emulator_cmd = Node(
+        condition=IfCondition(
+            PythonExpression([use_tunnel_align, " and ", use_sim_cboard_emulator])
+        ),
+        package="tunnel_align",
+        executable="sim_cboard_emulator_node",
+        name="sim_cboard_emulator",
+        output="screen",
+        respawn=use_respawn,
+        respawn_delay=2.0,
+        arguments=["--ros-args", "--log-level", log_level],
+        parameters=[configured_tunnel_align_params, {"use_sim_time": use_sim_time}],
     )
 
     load_nodes = GroupAction(
@@ -376,10 +436,15 @@ def generate_launch_description():
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_use_voxel_clearance_cmd)
     ld.add_action(declare_voxel_clearance_params_file_cmd)
+    ld.add_action(declare_use_tunnel_align_cmd)
+    ld.add_action(declare_use_sim_cboard_emulator_cmd)
+    ld.add_action(declare_tunnel_align_params_file_cmd)
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_terrain_analysis_cmd)
     ld.add_action(start_terrain_analysis_ext_cmd)
     ld.add_action(start_voxel_clearance_cmd)
+    ld.add_action(start_tunnel_align_supervisor_cmd)
+    ld.add_action(start_sim_cboard_emulator_cmd)
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)
 

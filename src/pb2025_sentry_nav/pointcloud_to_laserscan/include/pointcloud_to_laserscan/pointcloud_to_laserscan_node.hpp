@@ -76,7 +76,7 @@ public:
 private:
   void cloudCallback(sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud_msg);
 
-  void subscriptionListenerThreadLoop();
+  void subscriptionCheckCallback();
 
   std::unique_ptr<tf2_ros::Buffer> tf2_;
   std::unique_ptr<tf2_ros::TransformListener> tf2_listener_;
@@ -84,8 +84,7 @@ private:
   std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::LaserScan>> pub_;
   std::unique_ptr<MessageFilter> message_filter_;
 
-  std::thread subscription_listener_thread_;
-  std::atomic_bool alive_{true};
+  rclcpp::TimerBase::SharedPtr subscription_check_timer_;
 
   // ROS Parameters
   int input_queue_size_;
